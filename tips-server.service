@@ -1,0 +1,20 @@
+[Unit]
+Description=TIPs API Server + ngrok
+After=network.target
+
+[Service]
+Type=simple
+User=oaiz
+WorkingDirectory=/home/oaiz/Documents/sanora/Dianexea_stack/TIPs/
+ExecStart=/home/oaiz/Documents/sanora/Dianexea_stack/TIPs/start_server.sh
+Restart=on-failure
+RestartSec=5
+# Early reclaim pressure (gives jemalloc a chance to return pages)
+MemoryHigh=11G
+# Hard cap — fail this one process cleanly instead of letting the kernel
+# OOM-killer damage other services on the 15 GB host.
+MemoryMax=13G
+OOMPolicy=stop
+
+[Install]
+WantedBy=multi-user.target

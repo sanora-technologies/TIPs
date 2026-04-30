@@ -1,0 +1,72 @@
+server {
+    server_name dianexea.com www.dianexea.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/dianexea.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dianexea.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+
+# Redirect HTTP → HTTPS (frontend)
+server {
+    listen 80;
+    server_name dianexea.com www.dianexea.com;
+
+    return 301 https://$host$request_uri;
+}
+
+# ---------------- BACKEND (API SUBDOMAIN) ----------------
+server {
+    server_name api.dianexea.com;
+
+
+    location / {
+        proxy_pass http://localhost:3001;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/api.dianexea.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/api.dianexea.com/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+}
+
+# Redirect HTTP → HTTPS (API)
+server {
+    if ($host = api.dianexea.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    server_name api.dianexea.com;
+
+    return 301 https://$host$request_uri;
+
+
+}

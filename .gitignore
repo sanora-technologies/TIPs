@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+.env.*
+
+# nnUNet data (large binary/medical data)
+nnUNet_raw/
+nnUNet_preprocessed/
+nnResults/
+
+# Uploads and output (runtime data)
+uploads/
+output/
+workspace/
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.pkl
+
+# DICOM / scan files
+*.zip
+*.dcm
+*.nii
+*.nii.gz
+
+# CUDA build artifacts
+*.deb
+*.so
+*.so.*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,2531 @@
+"""
+api_server.py — Single-file dental inference + mesh API server.
+
+Loads all 4 models once at startup (~72 s).  Every subsequent request
+runs only inference (~60 s) then mesh post-processing and caches the
+full result as one gzipped JSON file.
+
+Start:
+    python api_server.py [--device cuda|cpu] [--port 7862]
+
+Two-venv note:
+    This file must run in a venv that can import BOTH the ToothSeg models
+    (Dataset121/123) AND the pulp UMambaBot model (Dataset810).
+    If you have two separate venvs, the simplest fix is to pip-install
+    the missing packages into one combined venv.
+    The postprocessing subprocesses (_run_sub) use VENV_BIN/python —
+    point that constant to the correct interpreter if needed.
+
+API:
+    POST /infer                          upload DICOM zip → {job_id}
+    GET  /status/{job_id}               poll → {status, stage, elapsed_s}
+    GET  /result/{job_id}               gzipped JSON: all meshes + perio
+    GET  /health
+    GET  /api/scans                     list result sets on disk
+    GET  /api/mesh/{base}/{layer}       single layer mesh (live, not cached)
+    GET  /api/perio/{base}
+    GET  /api/slice/{base}/{axis}/{index}   PNG CBCT slice
+    GET  /api/sliceinfo/{base}
+    GET  /api/labels/{base}
+    GET  /                              frontend SPA (ui/static/index.html)
+"""
+
+# ── PREAMBLE: must run before any nnunetv2 import ─────────────────────────────
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Load .env from project root (silently ignored if file is missing)
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+except ImportError:
+    pass  # python-dotenv not installed — use system env vars
+os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
+os.environ.setdefault('nnUNet_n_proc_DA', '4')  # Linux fork-based multiprocessing — safe to use multiple workers
+
+# Set nnUNet path env vars early to suppress repeated "not defined" warnings
+# (both in the main process and inherited by subprocesses)
+_REPO_ROOT_STR = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault('nnUNet_raw',          os.path.join(_REPO_ROOT_STR, 'nnUNet_raw'))
+os.environ.setdefault('nnUNet_preprocessed', os.path.join(_REPO_ROOT_STR, 'nnUNet_preprocessed'))
+os.environ.setdefault('nnUNet_results',      os.path.join(_REPO_ROOT_STR, 'nnResults'))
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# Patch torch.load so nnunet checkpoints load without weights_only errors
+_orig_torch_load = torch.load
+def _patched_torch_load(*args, **kwargs):
+    kwargs.setdefault('weights_only', False)
+    return _orig_torch_load(*args, **kwargs)
+torch.load = _patched_torch_load
+
+# Real mamba_ssm — built from source with --no-build-isolation against torch 2.8.0+cu129
+from mamba_ssm import Mamba  # noqa: F401 (imported so nnunetv2 nets can find it)
+
+# MKL threading — required on Linux for stable multi-threaded numpy/torch
+os.environ['MKL_THREADING_LAYER']     = 'GNU'
+os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
+
+# ── standard imports ──────────────────────────────────────────────────────────
+import argparse
+import base64
+import gc
+import gzip
+import hashlib
+import hmac
+import io
+import json
+import queue
+import re
+import shutil
+import struct
+import subprocess
+import tempfile
+import threading
+import time
+import traceback
+import urllib.request
+import uuid
+import zipfile
+import zlib
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import cv2
+import httpx
+import numpy as np
+import nibabel as nib
+import SimpleITK as sitk
+import uvicorn
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from PIL import Image as _PILImage
+from pydantic import BaseModel
+from ultralytics import YOLO
+
+from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+from nnunetv2.utilities.label_handling.label_handling import (
+    convert_labelmap_to_one_hot, LabelManager as _LabelManager)
+
+# ── argmax dtype patch (avoids 463 MB int64 intermediate on large scans) ──────
+_orig_convert_probs = _LabelManager.convert_probabilities_to_segmentation
+
+def _patched_convert_probabilities_to_segmentation(self, predicted_probabilities):
+    if self.regions_class_order is not None:
+        return _orig_convert_probs(self, predicted_probabilities)
+    is_numpy = isinstance(predicted_probabilities, np.ndarray)
+    if not is_numpy:
+        predicted_probabilities = predicted_probabilities.numpy()
+    out = np.empty(predicted_probabilities.shape[1:], dtype=np.int16)
+    np.argmax(predicted_probabilities, axis=0, out=out)
+    if not is_numpy:
+        out = torch.from_numpy(out)
+    return out
+
+_LabelManager.convert_probabilities_to_segmentation = (
+    _patched_convert_probabilities_to_segmentation)
+
+# ── inline preprocessing patch (no subprocess) ───────────────────────────────
+def _inline_preprocessing_iterator(list_of_lists, list_of_segs,
+                                    output_filenames_truncated,
+                                    plans_manager, dataset_json,
+                                    configuration_manager,
+                                    num_processes, pin_memory=False,
+                                    verbose=False):
+    label_manager = plans_manager.get_label_manager(dataset_json)
+    preprocessor  = configuration_manager.preprocessor_class(verbose=verbose)
+    for idx in range(len(list_of_lists)):
+        data, seg, props = preprocessor.run_case(
+            list_of_lists[idx],
+            list_of_segs[idx] if list_of_segs is not None else None,
+            plans_manager, configuration_manager, dataset_json)
+        if list_of_segs is not None and list_of_segs[idx] is not None:
+            data = np.vstack((data, convert_labelmap_to_one_hot(
+                seg[0], label_manager.foreground_labels, data.dtype)))
+        data_tensor = torch.from_numpy(data).contiguous().float()
+        del data
+        item = {'data': data_tensor,
+                'data_properties': props,
+                'ofile': (output_filenames_truncated[idx]
+                          if output_filenames_truncated is not None else None)}
+        if pin_memory and data_tensor.numel() < 200_000_000:
+            item['data'] = item['data'].pin_memory()
+        yield item
+
+import nnunetv2.inference.data_iterators      as _di
+import nnunetv2.inference.predict_from_raw_data as _pr
+_di.preprocessing_iterator_fromfiles = _inline_preprocessing_iterator
+_pr.preprocessing_iterator_fromfiles = _inline_preprocessing_iterator
+
+# ── GPU resampling patch ───────────────────────────────────────────────────────
+def _apply_gpu_resampling_patch() -> None:
+    try:
+        from nnunetv2.preprocessing.resampling import default_resampling as _mod
+        if getattr(_mod.resample_data_or_seg_to_shape, '__gpu_patched', False):
+            return
+        _orig = _mod.resample_data_or_seg_to_shape
+        def _gpu_resample(data, new_shape, current_spacing, new_spacing,
+                          is_seg=False, order=3, order_z=0,
+                          force_separate_z=None):
+            new_shape = tuple(int(s) for s in new_shape)
+            is_torch  = isinstance(data, torch.Tensor)
+            data_np   = (data.cpu().numpy()
+                         if (is_torch and data.device.type != 'cpu')
+                         else (data.numpy() if is_torch else data))
+            if data_np.shape[1:] == new_shape:
+                return data
+            mode  = 'nearest' if is_seg else 'trilinear'
+            extra = {} if is_seg else {'align_corners': False}
+            try:
+                with torch.no_grad():
+                    t   = torch.from_numpy(
+                              data_np.astype(np.float32)).unsqueeze(0).cuda()
+                    r   = F.interpolate(t, size=new_shape, mode=mode, **extra)
+                    out = r.squeeze(0).cpu().numpy()
+                    del t, r; torch.cuda.empty_cache()
+                return (np.round(out).astype(data_np.dtype)
+                        if is_seg else out)
+            except RuntimeError:
+                torch.cuda.empty_cache()
+                return _orig(data, new_shape, current_spacing, new_spacing,
+                             is_seg, order, order_z, force_separate_z)
+        _gpu_resample.__gpu_patched = True
+        _mod.resample_data_or_seg_to_shape = _gpu_resample
+        print('[server] GPU-accelerated resampling enabled')
+    except Exception as e:
+        print(f'[server] Could not enable GPU resampling: {e}')
+
+# ── constants ──────────────────────────────────────────────────────────────────
+REPO_ROOT   = Path(__file__).resolve().parent
+VENV_BIN    = Path("/home/oaiz/envs/server_env_3.11") / "bin"
+PYTHON      = str(VENV_BIN / "python")
+POSTPROCESS = REPO_ROOT / "toothseg" / "toothseg" / "postprocess_predictions"
+UI_STATIC   = REPO_ROOT / "ui" / "static"
+
+PULP_MODEL_FOLDER   = str(
+    REPO_ROOT / "nnResults" / "Dataset810_root_binarySDM"
+    / "nnUNetTrainerUMambaBot__nnUNetPlans__3d_fullres")
+DENTAL_MODEL_FOLDER = str(
+    REPO_ROOT / "models" / "nnUNet" / "Dataset112_DentalSegmentator_v100"
+    / "nnUNetTrainer__nnUNetPlans__3d_fullres")
+
+# NIfTI filename for each layer inside output/{case}/
+LAYER_FILES = {
+    "toothseg":    "toothseg.nii.gz",
+    "pulp":        "pulp.nii.gz",
+    "structures":  "structures.nii.gz",
+    "segmentator": "segmentation.nii.gz",
+}
+
+# ── OPG / 2-D inference (YOLO) ────────────────────────────────────────────────
+
+OPG_WEIGHTS   = REPO_ROOT / "opg"      / "best.pt"
+TEETH_WEIGHTS = REPO_ROOT / "t_number" / "best.pt"
+
+class _MediaType(str, Enum):
+    OPG_XRAY = "OPG_XRAY"
+    CBCT_3D  = "CBCT_3D"
+
+OPG_CLASSES = {
+    0: "Apical Periodontitis",
+    1: "Decay",
+    2: "Wisdom Tooth",
+    3: "Missing Tooth",
+    4: "Dental Filling",
+    5: "Root Canal Filling",
+    6: "Implant",
+    7: "Porcelain Crown",
+    8: "Ceramic Bridge",
+}
+
+TEETH_CLASSES = {
+    i: str(n)
+    for i, n in enumerate(
+        [11, 12, 13, 14, 15, 16, 17, 18,
+         21, 22, 23, 24, 25, 26, 27, 28,
+         31, 32, 33, 34, 35, 36, 37, 38,
+         41, 42, 43, 44, 45, 46, 47, 48]
+    )
+}
+
+DISEASE_COLORS = {
+    0: (0, 0, 255),
+    1: (0, 100, 255),
+    2: (0, 200, 255),
+    3: (200, 200, 200),
+    4: (255, 200, 0),
+    5: (255, 100, 0),
+    6: (255, 0, 150),
+    7: (0, 255, 0),
+    8: (0, 255, 255),
+}
+
+# Auth
+_OPG_API_TOKEN = os.environ.get("SANORA_API_TOKEN", "sanora-secret-key")
+_bearer        = HTTPBearer()
+
+# Webhook / report-storage config
+WEBHOOK_URL         = os.environ.get('AI_WEBHOOK_URL', 'http://localhost:3001/api/v1/ai-media-reports')
+WEBHOOK_SECRET      = os.environ.get('AI_WEBHOOK_SECRET', 'sanora-webhook-secret')
+BACKEND_BASE_URL    = os.environ.get('BACKEND_BASE_URL', '').rstrip('/')   # assets base URL e.g. https://api.dianexea.com/assets
+BACKEND_API_URL     = os.environ.get('BACKEND_API_URL', '').rstrip('/')    # API base URL e.g. https://api.dianexea.com/api/v1
+BACKEND_ASSETS_PATH = os.environ.get('BACKEND_ASSETS_PATH', '')            # local fallback (ignored when BACKEND_BASE_URL is set)
+
+def _verify_token(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
+    if creds.credentials != _OPG_API_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+
+# Load YOLO models once (fast — no GPU warmup needed)
+_opg_model   = YOLO(str(OPG_WEIGHTS))   if OPG_WEIGHTS.exists()   else None
+_teeth_model = YOLO(str(TEETH_WEIGHTS)) if TEETH_WEIGHTS.exists() else None
+
+# ── OPG helpers ────────────────────────────────────────────────────────────────
+
+async def _fetch_image(url: str) -> np.ndarray:
+    try:
+        async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "Mozilla/5.0"}) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"Failed to fetch media: HTTP {e.response.status_code}")
+    except Exception as e:
+        raise HTTPException(502, f"Failed to fetch media: {e}")
+
+    raw         = resp.content
+    content_type = resp.headers.get("content-type", "").lower()
+
+    if "dicom" in content_type or url.lower().endswith(".dcm"):
+        try:
+            import pydicom
+            dcm = pydicom.dcmread(io.BytesIO(raw))
+            arr = dcm.pixel_array.astype(np.float32)
+            arr = (arr - arr.min()) / (arr.max() - arr.min() + 1e-8) * 255
+            arr = arr.astype(np.uint8)
+            if arr.ndim == 2:
+                arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+            return arr
+        except ImportError:
+            raise HTTPException(501, "DICOM support requires 'pydicom'.")
+        except Exception as e:
+            raise HTTPException(400, f"Could not decode DICOM: {e}")
+
+    try:
+        img = _PILImage.open(io.BytesIO(raw)).convert("RGB")
+    except Exception:
+        raise HTTPException(400, "Could not decode image")
+    return np.array(img)[..., ::-1]
+
+
+def _encode_image(img_bgr: np.ndarray) -> str:
+    _, buf = cv2.imencode(".jpg", img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    return base64.b64encode(buf.tobytes()).decode("utf-8")
+
+
+def _fetch_image_sync(url: str) -> np.ndarray:
+    """Synchronous image fetch — used in background threads (no event loop needed).
+    Relative paths are resolved against BACKEND_BASE_URL (remote) or BACKEND_ASSETS_PATH (local).
+    """
+    if not url.startswith(('http://', 'https://')):
+        if BACKEND_BASE_URL:
+            url = BACKEND_BASE_URL + '/' + url.lstrip('/')
+        elif BACKEND_ASSETS_PATH:
+            local_path = Path(BACKEND_ASSETS_PATH) / url
+            if not local_path.exists():
+                raise RuntimeError(f"Local asset not found: {local_path}")
+            raw          = local_path.read_bytes()
+            content_type = ""
+            if url.lower().endswith(".dcm"):
+                try:
+                    import pydicom
+                    dcm = pydicom.dcmread(io.BytesIO(raw))
+                    arr = dcm.pixel_array.astype(np.float32)
+                    arr = (arr - arr.min()) / (arr.max() - arr.min() + 1e-8) * 255
+                    arr = arr.astype(np.uint8)
+                    if arr.ndim == 2:
+                        arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+                    return arr
+                except Exception as e:
+                    raise RuntimeError(f"Could not decode DICOM: {e}")
+            try:
+                img = _PILImage.open(io.BytesIO(raw)).convert("RGB")
+            except Exception:
+                raise RuntimeError("Could not decode image")
+            return np.array(img)[..., ::-1]
+        else:
+            raise RuntimeError("Cannot resolve relative URL: set BACKEND_BASE_URL or BACKEND_ASSETS_PATH")
+
+    try:
+        resp = httpx.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"},
+                         follow_redirects=True)
+        resp.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch media: {e}")
+    raw          = resp.content
+    content_type = resp.headers.get("content-type", "").lower()
+
+    if "dicom" in content_type or url.lower().endswith(".dcm"):
+        try:
+            import pydicom
+            dcm = pydicom.dcmread(io.BytesIO(raw))
+            arr = dcm.pixel_array.astype(np.float32)
+            arr = (arr - arr.min()) / (arr.max() - arr.min() + 1e-8) * 255
+            arr = arr.astype(np.uint8)
+            if arr.ndim == 2:
+                arr = cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+            return arr
+        except Exception as e:
+            raise RuntimeError(f"Could not decode DICOM: {e}")
+
+    try:
+        img = _PILImage.open(io.BytesIO(raw)).convert("RGB")
+    except Exception:
+        raise RuntimeError("Could not decode image")
+    return np.array(img)[..., ::-1]
+
+
+def _send_webhook(payload: dict) -> None:
+    """POST payload to the NestJS webhook with HMAC-SHA256 signature."""
+    if not WEBHOOK_URL:
+        print('[webhook] AI_WEBHOOK_URL not set — skipping webhook call')
+        return
+    body    = json.dumps(payload, separators=(',', ':'))
+    print(f'[webhook] Sending payload → {body}')
+    headers = {'Content-Type': 'application/json'}
+    if WEBHOOK_SECRET:
+        sig = hmac.new(WEBHOOK_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+        headers['X-Webhook-Signature'] = f'sha256={sig}'
+    try:
+        resp = httpx.post(WEBHOOK_URL, content=body.encode(), headers=headers, timeout=30)
+        resp.raise_for_status()
+        print(f'[webhook] Delivered ai_report_id={payload.get("ai_report_id")} '
+              f'type={payload.get("report_type")} status={payload.get("status")} '
+              f'→ HTTP {resp.status_code}')
+    except httpx.HTTPStatusError as e:
+        print(f'[webhook] ERROR delivering webhook for ai_report_id={payload.get("ai_report_id")}: {e}')
+        print(f'[webhook] Response body → {e.response.text}')
+    except Exception as e:
+        print(f'[webhook] ERROR delivering webhook for ai_report_id={payload.get("ai_report_id")}: {e}')
+
+
+def _upload_report_zip(zip_bytes: bytes, filename: str, ai_report_id: Optional[int] = None) -> Optional[str]:
+    """
+    POST a report ZIP to the NestJS backend (POST /api/v1/reports).
+    Returns the report_link string from the JSON response, or None on failure.
+    Used when BACKEND_API_URL is set (remote / ngrok mode).
+    """
+    upload_url = f"{BACKEND_API_URL}/reports"
+    if ai_report_id is not None:
+        upload_url = f"{upload_url}?ai_report_id={ai_report_id}"
+    try:
+        resp = httpx.post(
+            upload_url,
+            files={"file": (filename, zip_bytes, "application/zip")},
+            headers={"Authorization": f"Bearer {_OPG_API_TOKEN}"},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        link = data.get("report_link") or data.get("url") or data.get("path")
+        print(f'[webhook] Report uploaded → {link}  ({len(zip_bytes) / 1e3:.1f} KB)')
+        return link
+    except Exception as e:
+        print(f'[webhook] Upload failed: {e}')
+        return None
+
+
+def _save_opg_report(result: dict, ai_report_id: Optional[int] = None) -> Optional[str]:
+    """
+    Serialize OPG result to JSON, compress into a ZIP, then:
+      - Remote mode (BACKEND_API_URL set): upload via HTTP and return report_link.
+      - Local  mode (BACKEND_ASSETS_PATH set): write to assets/reports/ folder.
+    Returns None when neither is configured.
+    """
+    timestamp = str(int(time.time() * 1_000_000))
+    filename  = f"{timestamp}.zip"
+    body      = json.dumps(result, separators=(',', ':'))
+    buf       = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        zf.writestr(f"{timestamp}.json", body)
+    zip_bytes = buf.getvalue()
+
+    if BACKEND_API_URL:
+        return _upload_report_zip(zip_bytes, filename, ai_report_id)
+
+    if not BACKEND_ASSETS_PATH:
+        return None
+    reports_dir = Path(BACKEND_ASSETS_PATH) / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    dest = reports_dir / filename
+    dest.write_bytes(zip_bytes)
+    print(f'[webhook] OPG report saved → {dest} ({len(zip_bytes) / 1e3:.1f} KB)')
+    return f"reports/{filename}"
+
+
+def _save_cbct_report(case_name: str, cache_path: Path, ai_report_id: Optional[int] = None) -> Optional[str]:
+    """
+    Compress the CBCT result JSON into a ZIP, then:
+      - Remote mode (BACKEND_API_URL set): upload via HTTP and return report_link.
+      - Local  mode (BACKEND_ASSETS_PATH set): write to assets/reports/ folder.
+    Returns None when neither is configured.
+    """
+    timestamp = str(int(time.time() * 1_000_000))
+    filename  = f"{timestamp}.zip"
+    buf       = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        zf.write(str(cache_path), arcname=f"{timestamp}.json")
+    zip_bytes = buf.getvalue()
+
+    if BACKEND_API_URL:
+        return _upload_report_zip(zip_bytes, filename, ai_report_id)
+
+    if not BACKEND_ASSETS_PATH:
+        return None
+    reports_dir = Path(BACKEND_ASSETS_PATH) / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    dest = reports_dir / filename
+    dest.write_bytes(zip_bytes)
+    print(f'[webhook] CBCT report saved → {dest} ({len(zip_bytes) / 1e6:.1f} MB)')
+    return f"reports/{filename}"
+
+
+def _font_scale(img: np.ndarray, base: float = 0.6) -> float:
+    return base * (max(img.shape[:2]) / 1000)
+
+
+def _parse_yolo_results(results, class_map: dict) -> list:
+    detections = []
+    for r in results:
+        for i in range(len(r.boxes)):
+            x1, y1, x2, y2 = r.boxes.xyxy[i].tolist()
+            detections.append({
+                "class_id":   int(r.boxes.cls[i]),
+                "class_name": class_map.get(int(r.boxes.cls[i]), str(int(r.boxes.cls[i]))),
+                "confidence": round(float(r.boxes.conf[i]), 4),
+                "bbox": {"x1": round(x1, 2), "y1": round(y1, 2),
+                         "x2": round(x2, 2), "y2": round(y2, 2)},
+            })
+    return detections
+
+
+def _draw_teeth_numbers(img: np.ndarray, teeth_dets: list) -> np.ndarray:
+    overlay   = img.copy()
+    scale     = _font_scale(img, 0.7)
+    thickness = max(1, int(scale * 2.5))
+    for det in teeth_dets:
+        b  = det["bbox"]
+        cx = int((b["x1"] + b["x2"]) / 2)
+        cy = int((b["y1"] + b["y2"]) / 2)
+        label = det["class_name"]
+        (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        pad_x, pad_y = int(tw * 0.35), int(th * 0.45)
+        tl = (cx - tw // 2 - pad_x, cy - th // 2 - pad_y)
+        br = (cx + tw // 2 + pad_x, cy + th // 2 + pad_y)
+        radius = (br[1] - tl[1]) // 2
+        cv2.rectangle(overlay, tl, br, (40, 40, 40), cv2.FILLED)
+        cv2.addWeighted(overlay, 0.75, img, 0.25, 0, img)
+        overlay = img.copy()
+        for angle, center in [(180, (tl[0]+radius, tl[1]+radius)),
+                               (270, (br[0]-radius, tl[1]+radius)),
+                               (0,   (br[0]-radius, br[1]-radius)),
+                               (90,  (tl[0]+radius, br[1]-radius))]:
+            cv2.ellipse(img, center, (radius, radius), angle, 0, 90, (40, 40, 40), -1)
+        cv2.putText(img, label, (cx - tw // 2, cy + th // 2 - baseline // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    return img
+
+
+def _draw_disease_boxes(img: np.ndarray, disease_dets: list) -> np.ndarray:
+    scale         = _font_scale(img, 0.5)
+    thickness     = max(1, int(scale * 2))
+    box_thickness = max(2, int(scale * 3))
+    for det in disease_dets:
+        b  = det["bbox"]
+        x1, y1, x2, y2 = int(b["x1"]), int(b["y1"]), int(b["x2"]), int(b["y2"])
+        color = DISEASE_COLORS.get(det["class_id"], (0, 255, 0))
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, box_thickness)
+        label = det["class_name"]
+        if det.get("tooth_number"):
+            label = f"{label} (#{det['tooth_number']})"
+        label = f"{label} {det['confidence']:.0%}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        cv2.rectangle(img, (x1, y1 - th - 10), (x1 + tw + 6, y1), color, -1)
+        cv2.putText(img, label, (x1 + 3, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    return img
+
+
+def _iou(a: dict, b: dict) -> float:
+    ix1  = max(a["x1"], b["x1"]); iy1 = max(a["y1"], b["y1"])
+    ix2  = min(a["x2"], b["x2"]); iy2 = min(a["y2"], b["y2"])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    union = ((a["x2"]-a["x1"])*(a["y2"]-a["y1"]) +
+             (b["x2"]-b["x1"])*(b["y2"]-b["y1"]) - inter)
+    return inter / union if union > 0 else 0.0
+
+
+def _match_diseases_to_teeth(disease_dets: list, teeth_dets: list,
+                              iou_thresh: float = 0.05) -> list:
+    enriched = []
+    for d in disease_dets:
+        d_box = d["bbox"]
+        d_cx  = (d_box["x1"] + d_box["x2"]) / 2
+        d_cy  = (d_box["y1"] + d_box["y2"]) / 2
+        best_tooth, best_iou = None, 0.0
+        for t in teeth_dets:
+            t_box = t["bbox"]
+            score = _iou(d_box, t_box)
+            if score < iou_thresh and (t_box["x1"] <= d_cx <= t_box["x2"]
+                                       and t_box["y1"] <= d_cy <= t_box["y2"]):
+                score = max(score, iou_thresh)
+            if score > best_iou:
+                best_iou  = score
+                best_tooth = t["class_name"]
+        enriched.append({**d, "tooth_number": best_tooth,
+                         "tooth_iou": round(best_iou, 4)})
+    return enriched
+
+
+# ── Sequential class index → FDI tooth number lookup table.
+# The semseg model (Dataset121) outputs class indices 1–32; these correspond
+# to FDI numbers 11–18 (UR), 21–28 (UL), 31–38 (LL), 41–48 (LR).
+_FDI_LUT = [0,
+            11, 12, 13, 14, 15, 16, 17, 18,   # UR
+            21, 22, 23, 24, 25, 26, 27, 28,   # UL
+            31, 32, 33, 34, 35, 36, 37, 38,   # LL
+            41, 42, 43, 44, 45, 46, 47, 48]   # LR
+
+def _seq_to_fdi(lbl: int) -> int:
+    """Convert sequential class index (1-32) to FDI number (11-48). Returns 0 if invalid."""
+    if 1 <= lbl <= 32:
+        return _FDI_LUT[lbl]
+    return 0
+
+# Suggested colors/opacities sent with structures layer meshes
+# (purely hints — client can override freely)
+DENTAL_LABEL_META: Dict[int, Dict[str, Any]] = {
+    1: {'name': 'Maxilla',          'color': '#c9c98a', 'opacity': 0.25},
+    2: {'name': 'Mandible',         'color': '#b38fe5', 'opacity': 0.35},
+    3: {'name': 'Upper Teeth',      'color': '#d8843f', 'opacity': 0.95},
+    4: {'name': 'Lower Teeth',      'color': '#d7cfbc', 'opacity': 0.95},
+    5: {'name': 'Mandibular Canal', 'color': '#d13b3b', 'opacity': 0.90},
+}
+
+# ── model registry ─────────────────────────────────────────────────────────────
+_models: Dict[str, Optional[nnUNetPredictor]] = {
+    'semseg': None, 'instseg': None, 'pulp': None, 'dental': None,
+}
+_models_ready = threading.Event()
+
+
+def _find_toothseg_model(dataset_num: int, trainer: str, config: str) -> str:
+    root    = REPO_ROOT / "nnResults"
+    matches = sorted(root.glob(f"Dataset{dataset_num:03d}_*"))
+    if not matches:
+        raise RuntimeError(f"Dataset{dataset_num:03d}_* not found in {root}")
+    folder  = matches[0] / f"{trainer}__nnUNetPlans__{config}"
+    if not folder.exists():
+        raise RuntimeError(f"Model folder missing: {folder}")
+    return str(folder)
+
+
+def _build_predictor(model_folder: str, folds: tuple, checkpoint: str,
+                     tile_step_size: float, use_mirroring: bool,
+                     device: torch.device) -> nnUNetPredictor:
+    p = nnUNetPredictor(
+        tile_step_size=tile_step_size,
+        use_gaussian=True,
+        use_mirroring=use_mirroring,
+        perform_everything_on_device=True,
+        device=device,
+        verbose=False,
+        verbose_preprocessing=False,
+        allow_tqdm=True,
+    )
+    p.initialize_from_trained_model_folder(
+        model_folder, use_folds=folds, checkpoint_name=checkpoint)
+    return p
+
+
+_DEVICE = torch.device('cuda')
+_USE_AMP = True   # FP16 autocast — 2× faster on RTX 50-series tensor cores
+
+
+_libc = None
+def _malloc_trim() -> None:
+    """Ask glibc to return freed pages to the OS immediately."""
+    global _libc
+    try:
+        if _libc is None:
+            import ctypes
+            _libc = ctypes.CDLL('libc.so.6')
+        _libc.malloc_trim(0)
+    except Exception:
+        pass
+
+
+
+def load_all_models(device_str: str = 'cuda') -> None:
+    """Load all 4 models directly to GPU and keep them resident in VRAM.
+
+    RTX 5060 Ti has 16 GB VRAM; the 4 model checkpoints total ~300–600 MB,
+    leaving ~15 GB free for inference sliding-window buffers.  Keeping models
+    on GPU means zero CPU-RAM pressure from model weights — critical when the
+    host system only has 15 GB RAM with ~6 GB already used by OS + desktop."""
+    global _DEVICE
+    _DEVICE = torch.device(device_str)
+    device  = _DEVICE
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+    os.environ['nnUNet_results'] = str(REPO_ROOT / 'nnResults')
+    _apply_gpu_resampling_patch()
+
+    print('\n[server] ── Loading models → GPU (resident) ────────────────────')
+    t0 = time.time()
+
+    print('[server] 1/4  semseg  Dataset121 ...')
+    _models['semseg'] = _build_predictor(
+        _find_toothseg_model(121, 'nnUNetTrainer_onlyMirror01_DASegOrd0',
+                             '3d_fullres_resample_torch_256_bs8_ctnorm'),
+        folds=(5,), checkpoint='checkpoint_best.pth',
+        tile_step_size=0.4, use_mirroring=False, device=device)
+
+    print('[server] 2/4  instseg Dataset123 ...')
+    _models['instseg'] = _build_predictor(
+        _find_toothseg_model(123, 'nnUNetTrainer',
+                             '3d_fullres_resample_torch_192_bs8_ctnorm'),
+        folds=(5,), checkpoint='checkpoint_best.pth',
+        tile_step_size=0.4, use_mirroring=False, device=device)
+
+    print('[server] 3/4  pulp    Dataset810 UMambaBot ...')
+    _models['pulp'] = _build_predictor(
+        PULP_MODEL_FOLDER,
+        folds=('all',), checkpoint='checkpoint_best.pth',
+        tile_step_size=0.4, use_mirroring=False, device=device)
+
+    print('[server] 4/4  dental  Dataset112 ...')
+    _models['dental'] = _build_predictor(
+        DENTAL_MODEL_FOLDER,
+        folds=(0,), checkpoint='checkpoint_final.pth',
+        tile_step_size=0.5, use_mirroring=False, device=device)
+
+    used  = torch.cuda.memory_reserved()  / 1024**3
+    total = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    print(f'[server] All models on GPU in {time.time()-t0:.1f}s  '
+          f'(VRAM used: {used:.2f} / {total:.1f} GB)')
+    print('[server] ─────────────────────────────────────────────────────────\n')
+    _models_ready.set()
+
+# ── inference helpers ──────────────────────────────────────────────────────────
+
+def _make_env() -> dict:
+    env = os.environ.copy()
+    env["nnUNet_results"]      = str(REPO_ROOT / "toothseg")
+    env["nnUNet_raw"]          = str(REPO_ROOT / "nnUNet_raw")
+    env["nnUNet_preprocessed"] = str(REPO_ROOT / "nnUNet_preprocessed")
+    pp = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(REPO_ROOT) + (":" + pp if pp else "")
+    return env
+
+
+def _run_sub(cmd: list) -> None:
+    subprocess.run([str(c) for c in cmd], check=True, env=_make_env())
+
+
+def _resample_sitk(image: sitk.Image, new_spacing=(0.3, 0.3, 0.3),
+                   is_seg: bool = False) -> sitk.Image:
+    orig_spacing = image.GetSpacing()
+    orig_size    = image.GetSize()
+    new_size = [int(round(orig_size[i] * (orig_spacing[i] / new_spacing[i])))
+                for i in range(3)]
+    r = sitk.ResampleImageFilter()
+    r.SetOutputSpacing(new_spacing)
+    r.SetSize(new_size)
+    r.SetInterpolator(sitk.sitkNearestNeighbor if is_seg else sitk.sitkLinear)
+    r.SetOutputDirection(image.GetDirection())
+    r.SetOutputOrigin(image.GetOrigin())
+    return r.Execute(image)
+
+
+def _resize_to_02(images_dir: Path, workspace: Path) -> Path:
+    from nnunetv2.preprocessing.preprocessors.default_preprocessor import (
+        compute_new_shape)
+    from nnunetv2.preprocessing.resampling.resample_torch import (
+        resample_torch_simple)
+    out_dir = workspace / "imagesTs_resized"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target_spacing = (0.2, 0.2, 0.2)
+    for nifti in sorted(images_dir.glob("*.nii.gz")):
+        out_file = out_dir / nifti.name
+        im       = sitk.ReadImage(str(nifti))
+        arr      = sitk.GetArrayFromImage(im).astype(np.float32)
+        shape    = compute_new_shape(arr.shape,
+                                     list(im.GetSpacing())[::-1],
+                                     target_spacing)
+        try:
+            arr_r = resample_torch_simple(
+                torch.from_numpy(arr)[None], shape,
+                is_seg=False, device=torch.device('cuda:0'))[0].numpy()
+        except Exception:
+            arr_r = resample_torch_simple(
+                torch.from_numpy(arr)[None], shape,
+                is_seg=False, device=torch.device('cpu'))[0].numpy()
+        torch.cuda.empty_cache()
+        out_im = sitk.GetImageFromArray(arr_r)
+        out_im.SetSpacing(tuple(target_spacing[::-1]))
+        out_im.SetOrigin(im.GetOrigin())
+        out_im.SetDirection(im.GetDirection())
+        sitk.WriteImage(out_im, str(out_file))
+        del im, arr, arr_r, out_im
+        gc.collect()
+    return out_dir
+
+
+def _create_sdm(toothseg_sitk: sitk.Image) -> sitk.Image:
+    """Compute signed-distance-map accumulator for the pulp model input.
+
+    Each tooth is processed on its tight bounding-box crop so peak RAM is
+    O(one_tooth_bbox) instead of O(n_teeth × full_volume).  The numbers
+    written into the output array are identical to the naive full-volume
+    approach — every label is iterated, the distance values only depend on
+    voxels inside the crop, and PAD=4 > dilation radius=2 so boundary
+    effects are absorbed before the pasted region.
+    """
+    arr    = sitk.GetArrayFromImage(toothseg_sitk)   # shape (Z, Y, X)
+    labels = np.unique(arr)
+    labels = labels[labels > 0]
+
+    # Single float32 accumulator — same shape as the full volume
+    accum = np.zeros(arr.shape, dtype=np.float32)
+
+    PAD = 4   # voxel margin; must be > BinaryDilate radius (2) to avoid edge artefacts
+
+    for lbl in labels:
+        mask = (arr == int(lbl))
+        zz, yy, xx = np.where(mask)
+        if zz.size == 0:
+            continue
+
+        # Tight bbox + padding, clipped to volume bounds
+        z0 = max(int(zz.min()) - PAD, 0);  z1 = min(int(zz.max()) + PAD + 1, arr.shape[0])
+        y0 = max(int(yy.min()) - PAD, 0);  y1 = min(int(yy.max()) + PAD + 1, arr.shape[1])
+        x0 = max(int(xx.min()) - PAD, 0);  x1 = min(int(xx.max()) + PAD + 1, arr.shape[2])
+
+        crop_mask = mask[z0:z1, y0:y1, x0:x1].astype(np.uint8)
+
+        # Tiny sitk image — just this crop with correct voxel spacing
+        crop_im = sitk.GetImageFromArray(crop_mask)
+        crop_im.SetSpacing(toothseg_sitk.GetSpacing())  # spacing drives distance magnitudes
+
+        dilated  = sitk.BinaryDilate(crop_im, [2, 2, 2])
+        dist     = sitk.SignedMaurerDistanceMap(dilated,
+                       insideIsPositive=False,
+                       squaredDistance=False, useImageSpacing=True)
+        neg_only = sitk.Threshold(dist, lower=-1e10, upper=0, outsideValue=0)
+        d_arr    = sitk.GetArrayFromImage(sitk.Abs(neg_only)).astype(np.float32)
+
+        accum[z0:z1, y0:y1, x0:x1] += d_arr
+
+        del crop_mask, crop_im, dilated, dist, neg_only, d_arr
+        gc.collect()
+
+    result = sitk.GetImageFromArray(accum)
+    result.CopyInformation(toothseg_sitk)
+    del accum
+    return result
+
+
+def _predict(model_name: str, input_dir: str, output_dir: str) -> None:
+    """Run inference with FP16 autocast. Model stays on GPU permanently.
+    After inference, flush intermediate CPU arrays to the OS.
+
+    Uses predict_from_files_sequential (no multiprocessing) to avoid
+    deadlocks from repeated Pool/Queue spawns."""
+    os.makedirs(output_dir, exist_ok=True)
+    print(f'[predict] getting {model_name} predictor ...', flush=True)
+    predictor = _models[model_name]
+    if predictor is None:
+        raise RuntimeError(f"Model {model_name} not loaded at startup")
+    print(f'[predict] {model_name} predictor ready', flush=True)
+    _kw = dict(save_probabilities=False, overwrite=True,
+               folder_with_segs_from_prev_stage=None)
+    print(f'[predict] starting {model_name} inference ...', flush=True)
+    if _USE_AMP:
+        with torch.amp.autocast('cuda', dtype=torch.float16):
+            predictor.predict_from_files_sequential(input_dir, output_dir, **_kw)
+    else:
+        predictor.predict_from_files_sequential(input_dir, output_dir, **_kw)
+    print(f'[predict] {model_name} inference complete, flushing buffers ...', flush=True)
+    # Flush intermediate CPU arrays (NIfTI buffers, prediction logits) to OS
+    gc.collect(); gc.collect()
+    torch.cuda.empty_cache()
+    _malloc_trim()
+    print(f'[predict] {model_name} done', flush=True)
+
+# ── pipeline stages ────────────────────────────────────────────────────────────
+
+def _stage1_toothseg(zip_path: Path, workspace: Path) -> tuple[Path, str]:
+    """DICOM → NIfTI → semseg + instseg → postprocess → FDI teeth NIfTI."""
+    for d in ["imagesTs", "imagesTs_resized", "dicom"]:
+        p = workspace / d
+        if p.exists():
+            shutil.rmtree(p)
+    out_dir = workspace / "output"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    gc.collect(); torch.cuda.empty_cache()
+
+    case_name  = zip_path.stem
+    dicom_dir  = workspace / "dicom" / case_name
+    images_dir = workspace / "imagesTs"
+    dicom_dir.mkdir(parents=True, exist_ok=True)
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    _t1 = time.time()
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(dicom_dir)
+    actual = max(
+        (Path(dp) for dp, _, fns in os.walk(dicom_dir)
+         for fn in fns if fn.lower().endswith(('.dcm', '.ima', '.dicom'))),
+        key=lambda p: sum(
+            1 for f in p.iterdir()
+            if f.suffix.lower() in ('.dcm', '.ima', '.dicom')),
+        default=dicom_dir,
+    )
+    reader     = sitk.ImageSeriesReader()
+    series_ids = reader.GetGDCMSeriesIDs(str(actual))
+    if not series_ids:
+        for root, _, _ in os.walk(dicom_dir):
+            series_ids = reader.GetGDCMSeriesIDs(root)
+            if series_ids:
+                actual = Path(root); break
+    best = max(series_ids,
+               key=lambda sid: len(
+                   reader.GetGDCMSeriesFileNames(str(actual), sid)))
+    reader.SetFileNames(reader.GetGDCMSeriesFileNames(str(actual), best))
+    image      = reader.Execute()
+    nifti_path = images_dir / f"{case_name}_0000.nii.gz"
+    sitk.WriteImage(image, str(nifti_path))
+    del image, reader  # free DICOM data (~200-500 MB)
+    gc.collect()
+    print(f'[stage1]  dicom→nifti: {time.time()-_t1:.1f}s')
+
+    _t2 = time.time()
+    resized_dir = _resize_to_02(images_dir, workspace)
+    print(f'[stage1]  resize_to_02: {time.time()-_t2:.1f}s')
+
+    # Free DICOM extracted files — NIfTI is written, originals no longer needed
+    shutil.rmtree(dicom_dir, ignore_errors=True)
+
+    sem_dir = out_dir / "semseg_branch"
+    _t3 = time.time()
+    _predict('semseg', str(images_dir), str(sem_dir))
+    print(f'[stage1]  semseg predict: {time.time()-_t3:.1f}s')
+
+    inst_bc_dir = out_dir / "instseg_border_core"
+    _t4 = time.time()
+    _predict('instseg', str(resized_dir), str(inst_bc_dir))
+    print(f'[stage1]  instseg predict: {time.time()-_t4:.1f}s')
+
+    # Free resized dir — instseg is done with it
+    shutil.rmtree(resized_dir, ignore_errors=True)
+
+    inst_dir         = out_dir / "instseg_instances"
+    inst_resized_dir = out_dir / "instseg_resized"
+    final_dir        = out_dir / "final_prediction"
+    for d in [inst_dir, inst_resized_dir, final_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    # Inline postprocessing — avoids 3× cold Python subprocess spawns (~60s each)
+    from toothseg.toothseg.postprocess_predictions.border_core_to_instances import (
+        load_convert_semantic_to_instance_save)
+    from toothseg.toothseg.postprocess_predictions.resize_predictions import (
+        resample_segmentations_to_ref)
+    from toothseg.toothseg.postprocess_predictions.assign_majority_tooth_labels import (
+        assign_correct_tooth_labels_to_instanceseg)
+    from batchgenerators.utilities.file_and_folder_operations import subfiles, maybe_mkdir_p, join as bg_join
+
+    # Step 1: border-core → instances (single file, bypass Pool)
+    maybe_mkdir_p(str(inst_dir))
+    _t5 = time.time()
+    for f in subfiles(str(inst_bc_dir), suffix='.nii.gz', join=False):
+        load_convert_semantic_to_instance_save(
+            bg_join(str(inst_bc_dir), f), bg_join(str(inst_dir), f),
+            small_center_threshold=16, isolated_border_as_separate_instance_threshold=0,
+            overwrite=True, min_instance_size=16)
+    shutil.rmtree(str(inst_bc_dir), ignore_errors=True)  # free border-core output
+    gc.collect(); _malloc_trim()
+    print(f'[stage1]  border_core→instances: {time.time()-_t5:.1f}s')
+
+    # Step 2: resize predictions to original resolution (GPU-accelerated)
+    _t6 = time.time()
+    resample_segmentations_to_ref(
+        str(images_dir), str(inst_dir), str(inst_resized_dir),
+        num_threads_cpu_resampling=1)
+    shutil.rmtree(str(inst_dir), ignore_errors=True)  # free raw instances
+    torch.cuda.empty_cache(); gc.collect(); _malloc_trim()
+    print(f'[stage1]  resize_predictions: {time.time()-_t6:.1f}s')
+
+    # Step 3: assign FDI tooth labels via majority vote
+    maybe_mkdir_p(str(final_dir))
+    _t7 = time.time()
+    for f in subfiles(str(inst_resized_dir), suffix='.nii.gz', join=False):
+        assign_correct_tooth_labels_to_instanceseg(
+            bg_join(str(sem_dir), f), bg_join(str(inst_resized_dir), f),
+            bg_join(str(final_dir), f),
+            min_tooth_volume=0, isolated_semsegs_as_new_instances=False,
+            overwrite=True, allow_background_label=True)
+    gc.collect(); _malloc_trim()
+    print(f'[stage1]  assign_labels: {time.time()-_t7:.1f}s')
+
+    nii_files = sorted(final_dir.glob("*.nii.gz"))
+    if not nii_files:
+        raise RuntimeError(f"ToothSeg produced no output in {final_dir}")
+    return nii_files[0], case_name
+
+
+def _stage2_pulp(toothseg_path: Path,
+                 case_name: str, out_dir: Path) -> None:
+    """SDM → pulp UMambaBot → FDI-labelled pulp voxels."""
+    gc.collect(); torch.cuda.empty_cache(); _malloc_trim()
+
+    cbct_path = REPO_ROOT / "workspace" / "imagesTs" / f"{case_name}_0000.nii.gz"
+    if not cbct_path.exists():
+        raise RuntimeError(f"CBCT NIfTI not found at {cbct_path}")
+
+    with tempfile.TemporaryDirectory(prefix="pulp_") as tmp:
+        tmp = Path(tmp)
+        pulp_in = tmp / "pulp_input"
+        pulp_in.mkdir()
+
+        # ── CBCT: resample → write → free immediately ────────────────────────
+        print('[pulp]  reading CBCT nifti ...', flush=True)
+        _cbct_sitk = sitk.ReadImage(str(cbct_path))
+        cbct_03    = _resample_sitk(_cbct_sitk, (0.3, 0.3, 0.3), is_seg=False)
+        del _cbct_sitk
+        cbct_03_path = tmp / "cbct_03.nii.gz"
+        sitk.WriteImage(cbct_03, str(cbct_03_path), True)
+        shutil.copy(str(cbct_03_path), str(pulp_in / f"{case_name}_0000.nii.gz"))
+        del cbct_03
+        gc.collect()
+        print('[pulp]  CBCT resampled + written', flush=True)
+
+        # ── Teeth: resample → SDM → write → free before model load ──────────
+        print('[pulp]  reading teeth nifti ...', flush=True)
+        _teeth_sitk = sitk.ReadImage(str(toothseg_path))
+        teeth_03    = _resample_sitk(_teeth_sitk, (0.3, 0.3, 0.3), is_seg=True)
+        del _teeth_sitk
+        teeth_03_path = tmp / "teeth_03.nii.gz"
+        sitk.WriteImage(teeth_03, str(teeth_03_path), True)
+        print('[pulp]  teeth resampled + written', flush=True)
+
+        print('[pulp]  creating SDM ...', flush=True)
+        sdm = _create_sdm(teeth_03)
+        del teeth_03
+        sitk.WriteImage(sdm, str(pulp_in / f"{case_name}_0001.nii.gz"), True)
+        del sdm
+        gc.collect()
+        try:
+            import ctypes; ctypes.CDLL('libc.so.6').malloc_trim(0)
+        except Exception:
+            pass
+        print('[pulp]  SDM done, intermediates freed, loading model ...', flush=True)
+
+        # Final flush before inference (models should already be on GPU from startup)
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        gc.collect()
+        _malloc_trim()
+
+        pulp_out = tmp / "pulp_output"
+        os.environ['nnUNet_results'] = str(REPO_ROOT / 'nnResults')
+        _predict('pulp', str(pulp_in), str(pulp_out))
+
+        candidates = list(pulp_out.glob("*.nii.gz"))
+        if not candidates:
+            raise RuntimeError("Pulp model produced no output")
+
+        pulp_img   = nib.load(str(candidates[0]))
+        teeth_img  = nib.load(str(teeth_03_path))
+        pulp_data  = np.asarray(pulp_img.dataobj).astype(np.int32)
+        teeth_data = np.asarray(teeth_img.dataobj).astype(np.int32)
+        result     = np.zeros_like(pulp_data)
+        result[pulp_data == 1] = teeth_data[pulp_data == 1]
+        nib.save(nib.Nifti1Image(result, pulp_img.affine, pulp_img.header),
+                 str(out_dir / "pulp.nii.gz"))
+        del pulp_img, teeth_img, pulp_data, teeth_data, result
+
+
+def _stage3_dental(cbct_nifti: Path, out_dir: Path) -> None:
+    """DentalSegmentator → segmentation.nii.gz + structures.nii.gz.
+    Also writes VTK .vtp meshes if vtk is installed (optional, not used
+    by the web viewer — the web viewer re-runs marching cubes from NIfTI)."""
+    with tempfile.TemporaryDirectory(prefix="dental_") as tmp:
+        tmp = Path(tmp)
+        images_dir  = tmp / "images"; images_dir.mkdir()
+        volume_path = images_dir / "case_0000_0000.nii.gz"
+        shutil.copy2(str(cbct_nifti), str(volume_path))
+
+        pred_dir = tmp / "pred"
+        _predict('dental', str(images_dir), str(pred_dir))
+
+        seg_files = list(pred_dir.glob("*.nii.gz"))
+        if not seg_files:
+            raise RuntimeError("DentalSegmentator produced no output")
+        seg_path = str(seg_files[0])
+
+        # Optional: VTK .vtp mesh files (for external tools like Slicer/Paraview)
+        try:
+            import vtk
+            from vtk.util import numpy_support as _ns
+            _vtk_generate_meshes(seg_path, str(out_dir / "meshes"))
+        except ImportError:
+            pass  # VTK not required for web viewer
+
+        shutil.copy2(seg_path, str(out_dir / "segmentation.nii.gz"))
+
+    # Filtered structures: keep only maxilla(1), mandible(2), canal(5)
+    seg_img = nib.load(str(out_dir / "segmentation.nii.gz"))
+    data    = np.asarray(seg_img.dataobj).astype(np.int32)
+    structs = np.zeros_like(data)
+    for lbl in [1, 2, 5]:
+        structs[data == lbl] = lbl
+    nib.save(nib.Nifti1Image(structs, seg_img.affine, seg_img.header),
+             str(out_dir / "structures.nii.gz"))
+    del seg_img, data, structs
+
+
+def _vtk_generate_meshes(seg_nifti_path: str, output_dir: str) -> None:
+    """Write per-label VTK .vtp files (optional, requires vtk package)."""
+    import vtk
+    from vtk.util import numpy_support as _ns
+    os.makedirs(output_dir, exist_ok=True)
+    img      = sitk.ReadImage(seg_nifti_path)
+    img      = sitk.Cast(img, sitk.sitkInt16)
+    array    = sitk.GetArrayFromImage(img)
+    vtk_data = _ns.numpy_to_vtk(array.ravel(order='C'), deep=True,
+                                 array_type=vtk.VTK_SHORT)
+    vtk_img  = vtk.vtkImageData()
+    size     = img.GetSize()
+    vtk_img.SetDimensions(*size)
+    vtk_img.SetExtent(0, size[0]-1, 0, size[1]-1, 0, size[2]-1)
+    vtk_img.SetSpacing(img.GetSpacing())
+    vtk_img.SetOrigin(img.GetOrigin())
+    vtk_img.GetPointData().SetScalars(vtk_data)
+    results = []
+    for lv, meta in [(lv, m) for lv, m in DENTAL_LABEL_META.items() if lv != 0]:
+        dmc = vtk.vtkDiscreteMarchingCubes()
+        dmc.SetInputData(vtk_img); dmc.SetValue(0, int(lv)); dmc.Update()
+        cleaned = vtk.vtkCleanPolyData()
+        cleaned.SetInputConnection(dmc.GetOutputPort()); cleaned.Update()
+        smoother = vtk.vtkWindowedSincPolyDataFilter()
+        smoother.SetInputData(cleaned.GetOutput())
+        smoother.SetNumberOfIterations(30)
+        smoother.BoundarySmoothingOff(); smoother.FeatureEdgeSmoothingOff()
+        smoother.SetFeatureAngle(120.0); smoother.SetPassBand(0.001)
+        smoother.NonManifoldSmoothingOn(); smoother.NormalizeCoordinatesOn()
+        smoother.Update()
+        deci = vtk.vtkDecimatePro()
+        deci.SetInputConnection(smoother.GetOutputPort())
+        deci.SetTargetReduction(0.5); deci.PreserveTopologyOn(); deci.Update()
+        out_path = os.path.join(output_dir, f'label_{int(lv)}.vtp')
+        writer   = vtk.vtkXMLPolyDataWriter()
+        writer.SetFileName(out_path)
+        writer.SetInputData(deci.GetOutput()); writer.Write()
+        results.append({'label': int(lv), **meta, 'file': os.path.basename(out_path)})
+    with open(os.path.join(output_dir, 'mesh_meta.json'), 'w') as f:
+        json.dump(results, f, indent=2)
+
+# ── mesh generation ────────────────────────────────────────────────────────────
+
+def _resolve_nii(base: str, layer: str) -> Optional[Path]:
+    filename = LAYER_FILES.get(layer)
+    if filename:
+        p = REPO_ROOT / "output" / base / filename
+        if p.exists():
+            return p
+    return None
+
+
+def _taubin_smooth(vertices: np.ndarray, faces: np.ndarray,
+                   iterations: int = 10) -> tuple:
+    """Volume-preserving Taubin smoothing — GPU-accelerated via torch.scatter_add_."""
+    lam, mu = 0.50, -0.53
+    device  = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    v  = torch.from_numpy(vertices.copy()).to(device, dtype=torch.float32)
+    f  = torch.from_numpy(faces).to(device, dtype=torch.long)
+    rows = torch.cat([f[:,0], f[:,1], f[:,2], f[:,1], f[:,2], f[:,0]])
+    cols = torch.cat([f[:,1], f[:,2], f[:,0], f[:,0], f[:,1], f[:,2]])
+    rows3 = rows.unsqueeze(1).expand(-1, 3)
+    n_verts = v.shape[0]
+    cnt = torch.zeros(n_verts, device=device, dtype=torch.float32)
+    cnt.scatter_add_(0, rows, torch.ones(len(rows), device=device, dtype=torch.float32))
+    inv_cnt = (1.0 / cnt.clamp(min=1.0)).unsqueeze(1)
+    for _ in range(iterations):
+        nb = torch.zeros_like(v); nb.scatter_add_(0, rows3, v[cols])
+        v  = v + lam * (nb * inv_cnt - v)
+        nb = torch.zeros_like(v); nb.scatter_add_(0, rows3, v[cols])
+        v  = v + mu  * (nb * inv_cnt - v)
+    return v.cpu().numpy(), faces
+
+
+def _teeth_world_bbox(base: str):
+    """World-space bounding box of all tooth voxels, used to crop bone."""
+    p = _resolve_nii(base, 'toothseg')
+    if p is None:
+        return None
+    img  = nib.load(str(p))
+    data = np.asarray(img.dataobj)
+    vx   = np.argwhere(data > 0).astype(np.float32)
+    if len(vx) == 0:
+        return None
+    ones  = np.ones((len(vx), 1), dtype=np.float32)
+    world = (img.affine @ np.hstack([vx, ones]).T).T[:, :3]
+    return world.min(axis=0), world.max(axis=0)
+
+
+def _mesh_to_stl_bytes(vertices_flat: list, faces_flat: list) -> bytes:
+    """Pack a mesh (flat vertex/face lists) into binary STL bytes. Pure numpy — no loop."""
+    verts = np.array(vertices_flat, dtype=np.float32).reshape(-1, 3)
+    tris  = np.array(faces_flat,    dtype=np.int32  ).reshape(-1, 3)
+    v0, v1, v2 = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    normals = np.cross(v1 - v0, v2 - v0).astype(np.float32)
+
+    tri_dtype = np.dtype([
+        ('normal', np.float32, (3,)),
+        ('v0',     np.float32, (3,)),
+        ('v1',     np.float32, (3,)),
+        ('v2',     np.float32, (3,)),
+        ('attr',   np.uint16),
+    ])
+    arr             = np.zeros(len(tris), dtype=tri_dtype)
+    arr['normal']   = normals
+    arr['v0'], arr['v1'], arr['v2'] = v0, v1, v2
+
+    buf = io.BytesIO()
+    buf.write(b'\x00' * 80)                        # 80-byte header
+    buf.write(struct.pack('<I', len(tris)))         # triangle count
+    buf.write(arr.tobytes())
+    return buf.getvalue()
+
+
+def load_mesh(base: str, layer: str) -> dict:
+    """
+    Run marching cubes + Taubin smoothing on a NIfTI segmentation.
+    Returns {base, layer, meshes: [{label, name, color, opacity, vertices[], faces[]}]}.
+    Color/opacity are suggested defaults — client can override freely.
+    """
+    import mcubes as _mcubes
+    from scipy.ndimage import gaussian_filter, binary_closing
+    nii_path = _resolve_nii(base, layer)
+    if nii_path is None:
+        raise HTTPException(404, f"No NIfTI found for base={base!r}, layer={layer!r}")
+
+    img    = nib.load(str(nii_path))
+    data   = np.asarray(img.dataobj)
+    affine = img.affine
+
+    # Crop bone layers to dental arch (removes skull cap, sinus, chin)
+    bone_crop_bbox = None
+    if layer in ('structures', 'segmentator'):
+        bbox = _teeth_world_bbox(base)
+        if bbox is not None:
+            mn_xyz, mx_xyz = bbox[0].copy(), bbox[1].copy()
+            aff3      = np.abs(img.affine[:3, :3])
+            vert_axis = int(np.argmax(aff3[2]))
+            lo = mn_xyz - 30.0; hi = mx_xyz + 30.0
+            lo[vert_axis] = mn_xyz[vert_axis] - 60.0   # +60 mm below roots
+            hi[vert_axis] = mx_xyz[vert_axis] + 25.0   # +25 mm above crowns
+            bone_crop_bbox = (lo, hi)
+
+    labels = np.unique(data); labels = labels[labels > 0]
+    if len(labels) == 0:
+        raise HTTPException(422, "Segmentation is empty (all zeros).")
+
+    sigma_map  = {"structures": 3.0, "segmentator": 2.5,
+                  "toothseg": 1.5,   "pulp": 1.5}
+    taubin_map = {"structures": 25, "segmentator": 20,
+                  "toothseg": 12,   "pulp": 10}
+    sigma        = sigma_map.get(layer, 1.5)
+    taubin_iters = taubin_map.get(layer, 12)
+
+    meshes = []
+    for lbl in labels:
+        vol = (data == lbl).astype(np.uint8)
+        if vol.sum() < 50:
+            continue
+
+        if layer in ('structures', 'segmentator') and int(lbl) in (1, 2):
+            vol = binary_closing(vol, iterations=8).astype(np.uint8)
+
+        scalar_field = gaussian_filter(vol.astype(np.float32), sigma=sigma)
+
+        # Prevent adjacent teeth from sharing a mesh island
+        if layer == 'toothseg':
+            scalar_field[(data > 0) & (data != lbl)] = 0.0
+
+        level = 0.5
+        vmin, vmax = float(scalar_field.min()), float(scalar_field.max())
+        if vmax - vmin < 1e-6 or vmax < level:
+            continue
+
+        verts, faces = _mcubes.marching_cubes(scalar_field, level)
+        ones  = np.ones((len(verts), 1))
+        world = (affine @ np.hstack([verts, ones]).T).T[:, :3].astype(np.float32)
+        world, faces = _taubin_smooth(world, faces, iterations=taubin_iters)
+
+        if bone_crop_bbox is not None and int(lbl) in (1, 2):
+            mn, mx  = bone_crop_bbox
+            keep_v  = np.all((world >= mn) & (world <= mx), axis=1)
+            if keep_v.sum() < 10:
+                continue
+            new_idx = np.full(len(world), -1, dtype=np.int32)
+            new_idx[keep_v] = np.arange(keep_v.sum(), dtype=np.int32)
+            keep_f  = (keep_v[faces[:,0]] & keep_v[faces[:,1]]
+                       & keep_v[faces[:,2]])
+            faces   = new_idx[faces[keep_f]]
+            world   = world[keep_v]
+            if len(faces) == 0:
+                continue
+
+        # Remap sequential class index → FDI for tooth/pulp layers
+        out_label = int(lbl)
+        if layer in ('toothseg', 'pulp'):
+            fdi = _seq_to_fdi(int(lbl))
+            if fdi == 0:
+                continue   # invalid label, skip
+            out_label = fdi
+
+        meta = DENTAL_LABEL_META.get(int(lbl), {})
+        meshes.append({
+            "label":    out_label,
+            "name":     meta.get('name', f'Tooth {out_label}'),
+            "color":    meta.get('color',   '#e0c080'),
+            "opacity":  meta.get('opacity', 0.9),
+            "vertices": world.flatten().tolist(),
+            "faces":    faces.flatten().tolist(),
+        })
+
+    return {"base": base, "layer": layer, "meshes": meshes}
+
+# ── perio computation ──────────────────────────────────────────────────────────
+
+def _compute_perio(base: str) -> dict:
+    from scipy.spatial import cKDTree
+    from numpy.linalg import eigh
+    toothseg_path = _resolve_nii(base, 'toothseg')
+    struct_path   = _resolve_nii(base, 'structures')
+    if toothseg_path is None:
+        raise HTTPException(404, "toothseg layer not found — run inference first")
+    if struct_path is None:
+        raise HTTPException(404, "structures layer not found — run inference first")
+
+    tooth_img   = nib.load(str(toothseg_path))
+    struct_img  = nib.load(str(struct_path))
+    tooth_data  = np.asarray(tooth_img.dataobj).astype(np.int32)
+    struct_data = np.asarray(struct_img.dataobj).astype(np.int32)
+    tooth_affine  = tooth_img.affine
+    struct_affine = struct_img.affine
+
+    bone_mask      = (struct_data == 1) | (struct_data == 2)
+    bone_vx        = np.argwhere(bone_mask[::3, ::3, ::3]).astype(np.float32) * 3
+    if len(bone_vx) == 0:
+        raise HTTPException(422, "No bone segmentation found in structures layer")
+    ones_b         = np.ones((len(bone_vx), 1), dtype=np.float32)
+    bone_world_all = (struct_affine @ np.hstack([bone_vx, ones_b]).T).T[:, :3].astype(np.float64)
+
+    FDI_TO_JAW = {
+        **{i: 'maxilla'  for i in list(range(11, 19)) + list(range(21, 29))},
+        **{i: 'mandible' for i in list(range(31, 39)) + list(range(41, 49))},
+    }
+
+    results = []
+    for lbl in sorted(np.unique(tooth_data)):
+        if lbl == 0:
+            continue
+        fdi = _seq_to_fdi(int(lbl))
+        if fdi == 0:
+            continue   # invalid label
+        tooth_mask_arr = (tooth_data == lbl)
+        if tooth_mask_arr.sum() < 30:
+            continue
+
+        tooth_vx    = np.argwhere(tooth_mask_arr).astype(np.float32)
+        ones_t      = np.ones((len(tooth_vx), 1), dtype=np.float32)
+        tooth_world = (tooth_affine @ np.hstack([tooth_vx, ones_t]).T).T[:, :3].astype(np.float64)
+
+        centroid  = tooth_world.mean(axis=0)
+        centered  = tooth_world - centroid
+        cov       = (centered.T @ centered) / max(len(centered) - 1, 1)
+        _, eigvecs = eigh(cov)
+        long_axis  = eigvecs[:, -1].astype(np.float64)
+        proj       = centered @ long_axis
+        tooth_length_mm = float(proj.max() - proj.min())
+        root_proj_val   = float(proj.min())
+
+        rough_near = np.linalg.norm(bone_world_all - centroid, axis=1) < 20.0
+        if rough_near.sum() < 10:
+            continue
+        rough_bone_center = bone_world_all[rough_near].mean(axis=0)
+        if float((rough_bone_center - centroid) @ long_axis) > 0:
+            long_axis     = -long_axis
+            proj          = -proj
+            root_proj_val = float(proj.min())
+
+        b_cent      = bone_world_all - centroid
+        b_proj      = b_cent @ long_axis
+        b_ax_comp   = np.outer(b_proj, long_axis)
+        b_perp_dist = np.linalg.norm(b_cent - b_ax_comp, axis=1)
+        czt         = root_proj_val + 0.65 * tooth_length_mm
+        bone_filter = (b_perp_dist < 14.0) & (b_proj < czt)
+        filtered_bone = bone_world_all[bone_filter]
+        if len(filtered_bone) < 20:
+            filtered_bone = bone_world_all[(b_perp_dist < 22.0) & (b_proj < czt)]
+        if len(filtered_bone) == 0:
+            continue
+
+        local_tree  = cKDTree(filtered_bone)
+        dists, _    = local_tree.query(tooth_world, k=1, workers=-1)
+        iface_mask  = dists < 4.0
+        if iface_mask.sum() < 5:
+            continue
+        iface_world = tooth_world[iface_mask]
+
+        rough_bone_centroid = iface_world.mean(axis=0)
+        bone_level_proj     = float((rough_bone_centroid - centroid) @ long_axis)
+        slice_mask = np.abs(proj - bone_level_proj) < 2.0
+        if slice_mask.sum() < 8:
+            slice_mask = np.abs(proj - bone_level_proj) < 4.0
+        slice_world   = tooth_world[slice_mask] if slice_mask.sum() >= 5 else iface_world
+        bone_centroid = slice_world.mean(axis=0)
+        bone_proj     = float((bone_centroid - centroid) @ long_axis)
+
+        crown_world      = tooth_world[np.argmax(proj)]
+        root_world       = tooth_world[np.argmin(proj)]
+        bone_to_crown_mm = float(proj.max() - bone_proj)
+        # Per-tooth-type crown:root ratio (canines have longer roots, premolars shorter)
+        _cr = {13:0.38, 23:0.38, 33:0.38, 43:0.38,
+               14:0.46, 15:0.46, 24:0.46, 25:0.46,
+               34:0.46, 35:0.46, 44:0.46, 45:0.46}
+        crown_length_est = _cr.get(fdi, 0.42) * tooth_length_mm
+        root_exposed_mm  = max(0.0, bone_to_crown_mm - crown_length_est)
+
+        ref = np.array([0., 0., 1.])
+        if abs(long_axis @ ref) > 0.9:
+            ref = np.array([0., 1., 0.])
+        u  = np.cross(long_axis, ref); u /= np.linalg.norm(u)
+        v  = np.cross(long_axis, u)
+        sc = slice_world - bone_centroid
+        ring_radius = float(
+            np.percentile(np.sqrt((sc @ u)**2 + (sc @ v)**2), 65))
+
+        if   root_exposed_mm < 2.0: severity = 'normal'
+        elif root_exposed_mm < 4.0: severity = 'mild'
+        elif root_exposed_mm < 6.0: severity = 'moderate'
+        else:                       severity = 'severe'
+
+        results.append({
+            'fdi':              fdi,
+            'jaw':              FDI_TO_JAW.get(fdi, 'unknown'),
+            'bone_point':       bone_centroid.tolist(),
+            'crown_tip':        crown_world.tolist(),
+            'root_tip':         root_world.tolist(),
+            'long_axis':        long_axis.tolist(),
+            'ring_radius_mm':   round(ring_radius, 1),
+            'tooth_length_mm':  round(tooth_length_mm, 1),
+            'crown_length_mm':  round(crown_length_est, 1),
+            'bone_to_crown_mm': round(bone_to_crown_mm, 1),
+            'root_exposed_mm':  round(root_exposed_mm, 1),
+            'severity':         severity,
+        })
+
+    counts = {s: sum(1 for r in results if r['severity'] == s)
+              for s in ('normal', 'mild', 'moderate', 'severe')}
+    return {'base': base, 'teeth': results, 'summary': counts}
+
+# ── image helpers (panorama, periapical, bitewing, cephalometric, slices) ──────
+
+def _encode_png_gray(arr_u8: np.ndarray) -> bytes:
+    """Encode 2-D uint8 HxW array as lossless grayscale PNG (stdlib only)."""
+    h, w = arr_u8.shape
+    raw  = b"".join(b"\x00" + arr_u8[y].tobytes() for y in range(h))
+    def _chunk(tag: bytes, data: bytes) -> bytes:
+        c = tag + data
+        return (struct.pack(">I", len(data)) + c
+                + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF))
+    return (b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+            + _chunk(b"IDAT", zlib.compress(raw, 6))
+            + _chunk(b"IEND", b""))
+
+
+def _generate_panoramic(base: str, out_dir: Path) -> dict:
+    """
+    Generate a reconstructed panoramic radiograph via Curved Planar Reformation.
+    Fits a spline through tooth centroids in the XY plane, then for each point
+    along the spline samples a slab perpendicular to the arch and takes a MIP.
+    Saves panoramic.png and returns metadata.
+    """
+    from scipy.interpolate import splprep, splev
+    from scipy.ndimage import map_coordinates
+
+    cbct_entry = _load_cbct_for_report(base)
+    if cbct_entry is None:
+        return {"available": False, "error": "cbct.nii.gz not found"}
+    data, affine, vmin, vmax, axis_order = cbct_entry
+
+    # Load toothseg to get centroids
+    toothseg_path = _resolve_nii(base, 'toothseg')
+    if toothseg_path is None:
+        return {"available": False, "error": "toothseg not found"}
+    tooth_img  = nib.load(str(toothseg_path))
+    tooth_data = np.asarray(tooth_img.dataobj).astype(np.int32)
+    tooth_aff  = tooth_img.affine
+
+    # Compute world-space centroids for each tooth
+    centroids = []
+    for lbl in np.unique(tooth_data):
+        if lbl == 0:
+            continue
+        fdi = _seq_to_fdi(int(lbl))
+        if fdi == 0:
+            continue
+        vx = np.argwhere(tooth_data == lbl).astype(np.float32)
+        if len(vx) < 30:
+            continue
+        ones = np.ones((len(vx), 1), dtype=np.float32)
+        world = (tooth_aff @ np.hstack([vx, ones]).T).T[:, :3]
+        centroids.append(world.mean(axis=0))
+
+    if len(centroids) < 3:
+        return {"available": False, "error": "too few teeth for panoramic"}
+
+    centroids = np.array(centroids)
+
+    # Sort centroids by angle around their mean (to trace the arch)
+    center_xy = centroids[:, :2].mean(axis=0)
+    angles = np.arctan2(centroids[:, 1] - center_xy[1],
+                        centroids[:, 0] - center_xy[0])
+    order = np.argsort(angles)
+    sorted_xy = centroids[order, :2]
+
+    # Fit spline through arch centroids in XY
+    try:
+        tck, _ = splprep([sorted_xy[:, 0], sorted_xy[:, 1]], s=len(sorted_xy) * 2.0, per=False)
+    except Exception:
+        return {"available": False, "error": "spline fitting failed"}
+
+    # Sample dense points along arch
+    n_cols = 500
+    u_dense = np.linspace(0, 1, n_cols)
+    arch_x, arch_y = splev(u_dense, tck)
+
+    # Compute tangent and normal at each point
+    dx, dy = splev(u_dense, tck, der=1)
+    tangent_len = np.sqrt(dx**2 + dy**2)
+    tangent_len[tangent_len < 1e-8] = 1e-8
+    # Normal perpendicular to tangent in XY plane (pointing outward)
+    nx = -dy / tangent_len
+    ny =  dx / tangent_len
+
+    # Slab parameters
+    slab_half_mm = 15.0   # 15mm on each side of arch = 30mm total slab
+    spacing = abs(float(affine[0, 0]))
+    n_slab = int(2 * slab_half_mm / spacing) + 1
+    slab_offsets = np.linspace(-slab_half_mm, slab_half_mm, n_slab)
+
+    # Inverse affine for world→voxel
+    inv_aff = np.linalg.inv(affine)
+
+    ax_z = axis_order["axial"]
+    n_z = data.shape[ax_z]
+
+    # Pre-compute all Z world-coordinates (vectorised — eliminates inner loop)
+    k_indices = np.arange(n_z, dtype=np.float64)
+    wz_all = float(affine[2, 3]) + k_indices * float(affine[2, ax_z])
+
+    # Build the panoramic image via MIP across the slab
+    panoramic = np.full((n_z, n_cols), -3000.0, dtype=np.float32)
+
+    for offset_mm in slab_offsets:
+        # World XY coords for this slab offset along all arch points
+        wx = arch_x + nx * offset_mm
+        wy = arch_y + ny * offset_mm
+
+        # Build (n_z * n_cols) world points in one shot — no inner loop
+        n_pts = n_z * n_cols
+        world_pts = np.empty((n_pts, 4), dtype=np.float64)
+        world_pts[:, 0] = np.tile(wx, n_z)
+        world_pts[:, 1] = np.tile(wy, n_z)
+        world_pts[:, 2] = np.repeat(wz_all, n_cols)
+        world_pts[:, 3] = 1.0
+
+        voxel_pts = (inv_aff @ world_pts.T).T[:, :3]
+        coords = [voxel_pts[:, d] for d in range(3)]
+        sampled = map_coordinates(data, coords, order=1, mode='constant',
+                                  cval=-1024.0).reshape(n_z, n_cols)
+        np.maximum(panoramic, sampled, out=panoramic)
+
+    # Apply dental contrast window
+    wc, ww = 700.0, 2800.0
+    lo, hi = wc - ww / 2, wc + ww / 2
+    img_u8 = np.clip((panoramic - lo) / ww * 255, 0, 255).astype(np.uint8)
+
+    # Flip vertically so crowns are at top (superior = top of image)
+    z_sign = float(affine[2, ax_z])
+    if z_sign > 0:
+        img_u8 = np.flipud(img_u8)
+
+    report_dir = out_dir / "report"
+    report_dir.mkdir(exist_ok=True)
+    png_path = report_dir / "panoramic.png"
+    with open(str(png_path), "wb") as f:
+        f.write(_encode_png_gray(img_u8))
+
+    print(f'[server]   panoramic done ({img_u8.shape[1]}x{img_u8.shape[0]})')
+    return {"available": True, "width": int(img_u8.shape[1]), "height": int(img_u8.shape[0])}
+
+
+def _generate_tooth_thumbnails(base: str, perio_teeth: list, out_dir: Path) -> dict:
+    """
+    For each tooth, extract 3 cropped CBCT slices (axial, coronal, sagittal)
+    centered on the tooth midpoint. Saves as PNGs in report/ dir.
+    """
+    cbct_entry = _load_cbct_for_report(base)
+    if cbct_entry is None:
+        return {}
+    data, affine, vmin, vmax, axis_order = cbct_entry
+    inv_aff = np.linalg.inv(affine)
+
+    # Also load toothseg for per-tooth bounding boxes
+    toothseg_path = _resolve_nii(base, 'toothseg')
+    tooth_data = None
+    if toothseg_path:
+        tooth_data = np.asarray(nib.load(str(toothseg_path)).dataobj).astype(np.int32)
+
+    report_dir = out_dir / "report"
+    report_dir.mkdir(exist_ok=True)
+
+    available = {}
+    margin_mm = 10.0
+    thumb_size = 128
+    spacing = abs(float(affine[0, 0]))
+    margin_vx = int(margin_mm / spacing)
+
+    axes_info = [
+        ("axial",    axis_order["axial"]),
+        ("coronal",  axis_order["coronal"]),
+        ("sagittal", axis_order["sagittal"]),
+    ]
+
+    for tooth in perio_teeth:
+        fdi = tooth['fdi']
+        ct = np.array(tooth['crown_tip'])
+        rt = np.array(tooth['root_tip'])
+        center_world = (ct + rt) / 2.0
+
+        # World → voxel
+        center_homo = np.append(center_world, 1.0)
+        center_vx = (inv_aff @ center_homo)[:3]
+
+        tooth_avail = {}
+        for ax_name, ax_dim in axes_info:
+            idx = int(np.clip(round(center_vx[ax_dim]), 0, data.shape[ax_dim] - 1))
+            sl = np.take(data, idx, axis=ax_dim).astype(np.float32)
+
+            # Compute crop bounds from the other two dims
+            other_dims = [d for d in range(3) if d != ax_dim]
+            c0 = int(round(center_vx[other_dims[0]]))
+            c1 = int(round(center_vx[other_dims[1]]))
+
+            # If we have tooth segmentation, use its bbox for tighter crop
+            crop_margin = margin_vx
+            if tooth_data is not None:
+                # Find sequential label for this FDI
+                seq_lbl = 0
+                for s in range(1, 33):
+                    if _FDI_LUT[s] == fdi:
+                        seq_lbl = s
+                        break
+                if seq_lbl > 0:
+                    mask_2d = np.take(tooth_data == seq_lbl, idx, axis=ax_dim)
+                    if mask_2d.any():
+                        rows, cols = np.where(mask_2d)
+                        crop_margin = max(margin_vx // 2,
+                                          max(rows.max() - rows.min(),
+                                              cols.max() - cols.min()) // 2 + margin_vx // 3)
+
+            r0 = max(0, c0 - crop_margin)
+            r1 = min(sl.shape[0], c0 + crop_margin)
+            c0b = max(0, c1 - crop_margin)
+            c1b = min(sl.shape[1], c1 + crop_margin)
+
+            crop = sl[r0:r1, c0b:c1b]
+            if crop.size == 0:
+                continue
+
+            # Normalize and resize to thumbnail
+            u8 = np.clip((crop - vmin) / max(vmax - vmin, 1.0), 0, 1)
+            u8 = (u8 * 255).astype(np.uint8)
+
+            # Simple nearest-neighbor resize to thumb_size x thumb_size
+            from PIL import Image
+            pil_img = Image.fromarray(u8, mode='L')
+            pil_img = pil_img.resize((thumb_size, thumb_size), Image.NEAREST)
+            u8_resized = np.array(pil_img)
+
+            # Flip if needed (same logic as api_slice)
+            if ax_name != "axial":
+                z_sign = float(affine[2, axis_order["axial"]])
+                if z_sign > 0:
+                    u8_resized = np.flipud(u8_resized)
+            else:
+                y_sign = float(affine[1, axis_order["coronal"]])
+                if y_sign > 0:
+                    u8_resized = np.flipud(u8_resized)
+
+            png_path = report_dir / f"tooth_{fdi}_{ax_name}.png"
+            with open(str(png_path), "wb") as f:
+                f.write(_encode_png_gray(u8_resized))
+            tooth_avail[ax_name] = True
+
+        if tooth_avail:
+            available[str(fdi)] = tooth_avail
+
+    print(f'[server]   tooth thumbnails done ({len(available)} teeth)')
+    return available
+
+
+def _load_cbct_for_report(base: str):
+    """Wrapper for _load_cbct that works before _cbct_cache is defined."""
+    return _load_cbct(base)
+
+
+_cbct_cache: dict = {}
+_CBCT_CACHE_MAX = 1
+
+def _load_cbct(base: str):
+    if base in _cbct_cache:
+        return _cbct_cache[base]
+    cbct_path = REPO_ROOT / "output" / base / "cbct.nii.gz"
+    if not cbct_path.exists():
+        return None
+    img  = nib.load(str(cbct_path))
+    data = np.asarray(img.dataobj).astype(np.float32)
+    fg   = data[data > -500]
+    vmin = float(np.percentile(fg, 1))  if len(fg) > 100 else float(data.min())
+    vmax = float(np.percentile(fg, 99)) if len(fg) > 100 else float(data.max())
+    aff3 = np.abs(img.affine[:3, :3])
+    axis_order = {
+        "sagittal": int(np.argmax(aff3[0])),
+        "coronal":  int(np.argmax(aff3[1])),
+        "axial":    int(np.argmax(aff3[2])),
+    }
+    entry = (data, img.affine, vmin, vmax, axis_order)
+    if len(_cbct_cache) >= _CBCT_CACHE_MAX:
+        del _cbct_cache[next(iter(_cbct_cache))]
+    _cbct_cache[base] = entry
+    return entry
+
+# ── result caching (NEW) ───────────────────────────────────────────────────────
+
+def _build_result_cache(case_name: str, out_dir: Path) -> Path:
+    """
+    After all 3 pipeline stages complete, compute all meshes + perio
+    and write them to result_cache.json.gz.  The /result endpoint
+    serves this file directly — zero re-computation on repeated requests.
+    """
+    print(f'[server] Building result cache for {case_name}...')
+    t0 = time.time()
+
+    payload: Dict[str, Any] = {"case": case_name}
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _build_layer(layer):
+        try:
+            result = load_mesh(case_name, layer)
+            print(f'[server]   mesh/{layer} done')
+            return layer, result
+        except Exception as e:
+            print(f'[server]   mesh/{layer} FAILED: {e}')
+            return layer, {"meshes": [], "error": str(e)}
+
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        for layer, result in ex.map(_build_layer, ("toothseg", "pulp", "structures")):
+            payload[layer] = result
+
+    try:
+        payload["perio"] = _compute_perio(case_name)
+        print(f'[server]   perio done')
+    except Exception as e:
+        print(f'[server]   perio FAILED: {e}')
+        payload["perio"] = {"teeth": [], "summary": {}, "error": str(e)}
+
+    # Pre-generate panoramic radiograph (non-critical)
+    try:
+        pano = _generate_panoramic(case_name, out_dir)
+        if pano.get("available"):
+            print(f'[server]   panoramic done')
+        else:
+            print(f'[server]   panoramic skipped: {pano.get("error", "unknown")}')
+    except Exception as e:
+        print(f'[server]   panoramic FAILED (non-critical): {e}')
+
+    json_path = out_dir / "result_cache.json"
+    with open(str(json_path), "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+
+    # ── Pack slim result.json + per-label STL files into one ZIP ────────────
+    # result.json inside the ZIP carries only metadata (no vertices/faces) —
+    # geometry lives in the STL files, avoiding duplication of the mesh data.
+    def _slim_payload(p: dict) -> dict:
+        slim = {k: v for k, v in p.items()
+                if k not in ("toothseg", "pulp", "structures", "segmentator")}
+        for layer_key in ("toothseg", "pulp", "structures", "segmentator"):
+            if layer_key not in p:
+                continue
+            layer_data = p[layer_key]
+            slim_meshes = [
+                {k: v for k, v in m.items() if k not in ("vertices", "faces")}
+                for m in layer_data.get("meshes", [])
+            ]
+            slim[layer_key] = {**layer_data, "meshes": slim_meshes}
+        return slim
+
+    zip_path = out_dir / "result_cache.zip"
+    with zipfile.ZipFile(str(zip_path), 'w', compression=zipfile.ZIP_DEFLATED,
+                         compresslevel=6) as zf:
+        zf.writestr("result.json", json.dumps(_slim_payload(payload), separators=(',', ':')))
+        for layer_key in ("toothseg", "pulp", "structures", "segmentator"):
+            layer_data = payload.get(layer_key, {})
+            for mesh in layer_data.get("meshes", []):
+                lbl  = mesh.get("label", 0)
+                verts = mesh.get("vertices", [])
+                faces = mesh.get("faces", [])
+                if not verts or not faces:
+                    continue
+                stl_bytes = _mesh_to_stl_bytes(verts, faces)
+                zf.writestr(f"stls/{layer_key}_{lbl}.stl", stl_bytes)
+
+    print(f'[server] Result cache written in {time.time()-t0:.1f}s '
+          f'(json={json_path.stat().st_size/1024/1024:.1f} MB, '
+          f'zip={zip_path.stat().st_size/1024/1024:.1f} MB)')
+    return zip_path
+
+# ── job management ─────────────────────────────────────────────────────────────
+
+_job_queue: "queue.Queue[str]" = queue.Queue()
+_jobs: Dict[str, Dict[str, Any]] = {}
+_jobs_lock = threading.Lock()
+
+_UPLOADS = REPO_ROOT / "uploads"
+_UPLOADS.mkdir(exist_ok=True)
+
+
+def _cleanup_before_job(current_zip: str) -> None:
+    """Free memory and disk from previous jobs before starting a new one."""
+    print('[server] Cleanup: clearing caches and temp data from prior jobs...')
+
+    # 1. Clear CBCT RAM cache (each entry is a ~200+ MB numpy array)
+    if _cbct_cache:
+        _cbct_cache.clear()
+        print('[server]   CBCT cache cleared')
+
+    # 2. Wipe workspace temp dirs (semseg branches, resized images, etc.)
+    workspace = REPO_ROOT / "workspace"
+    for sub in ("imagesTs", "imagesTs_resized", "dicom", "output"):
+        d = workspace / sub
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+    print('[server]   workspace cleaned')
+
+    # 3. Delete old uploaded zips (keep only the one we're about to process)
+    current_zip_path = Path(current_zip)
+    for f in _UPLOADS.iterdir():
+        if f.is_file() and f != current_zip_path:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    print('[server]   old uploads removed')
+
+    # 4. Delete old output dirs (each holds ~100 MB of NIfTIs + 68 MB JSON + 32 MB ZIP).
+    #    These fill the kernel page cache and eat RAM on a 15 GB system.
+    #    Keep only the report ZIPs which are already copied to reports/.
+    output_root = REPO_ROOT / "output"
+    if output_root.exists():
+        for d in output_root.iterdir():
+            if d.is_dir():
+                shutil.rmtree(d, ignore_errors=True)
+        print('[server]   old output dirs removed')
+
+    # 5. Purge completed/failed jobs from _jobs dict (metadata + paths hold refs)
+    with _jobs_lock:
+        done_ids = [jid for jid, j in _jobs.items()
+                    if j.get('status') in ('done', 'error')]
+        for jid in done_ids:
+            del _jobs[jid]
+    if done_ids:
+        print(f'[server]   {len(done_ids)} finished job(s) purged from memory')
+
+    # 6. Force garbage collection + CUDA cache flush
+    gc.collect()
+    gc.collect()  # second pass catches ref-cycles freed by first
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+
+    # 7. Return freed pages to OS.
+    #    With PYTHONMALLOC=malloc + LD_PRELOAD=jemalloc this reclaims everything.
+    #    Without jemalloc, malloc_trim still reclaims glibc heap (large allocs).
+    try:
+        import ctypes
+        # Try jemalloc's epoch advance (forces return of all unused pages)
+        try:
+            _je = ctypes.CDLL('libjemalloc.so.2')
+            epoch = ctypes.c_uint64(1)
+            sz    = ctypes.c_size_t(ctypes.sizeof(epoch))
+            _je.mallctl(b'epoch', ctypes.byref(epoch), ctypes.byref(sz),
+                        ctypes.byref(epoch), sz)
+        except Exception:
+            pass
+        # Always call glibc malloc_trim as fallback
+        ctypes.CDLL('libc.so.6').malloc_trim(0)
+    except Exception:
+        pass
+
+    # 8. Flush dirty kernel pages then pause so the OS finishes reclaiming RAM
+    #    before the next job allocates. Without this, page eviction races with
+    #    model loading and causes swap thrash on 15 GB systems.
+    try:
+        subprocess.run(['sync'], check=False, timeout=5)
+    except Exception:
+        pass
+    time.sleep(2)
+    print('[server]   gc + CUDA cache flushed + malloc_trim + sync')
+
+
+def _process_opg_job(job_id: str) -> None:
+    """Run OPG YOLO inference in a background thread and deliver result via webhook."""
+    with _jobs_lock:
+        job = _jobs[job_id]
+        job['status']  = 'running'
+        job['stage']   = 'running'
+        job['started'] = time.time()
+
+    t0 = time.time()
+    try:
+        print(f'Media url for OPG job {job_id[:8]}: {job["media_url"]}')
+        img = _fetch_image_sync(job['media_url'])
+
+        opg_dets   = _parse_yolo_results(
+            _opg_model.predict(img,   imgsz=736, conf=0.25, iou=0.7, max_det=300), OPG_CLASSES)
+        teeth_dets = _parse_yolo_results(
+            _teeth_model.predict(img, imgsz=896, conf=0.25, iou=0.7, max_det=300), TEETH_CLASSES)
+
+        matched   = _match_diseases_to_teeth(opg_dets, teeth_dets)
+        annotated = _draw_disease_boxes(_draw_teeth_numbers(img.copy(), teeth_dets), matched)
+
+        tooth_map: dict = {}
+        for t in teeth_dets:
+            b = t["bbox"]
+            tooth_map[t["class_name"]] = {
+                "tooth_number": t["class_name"],
+                "confidence":   t["confidence"],
+                "centre": {"x": round((b["x1"] + b["x2"]) / 2, 2),
+                           "y": round((b["y1"] + b["y2"]) / 2, 2)},
+                "diseases": [],
+            }
+        for d in matched:
+            tn = d.get("tooth_number")
+            if tn and tn in tooth_map:
+                tooth_map[tn]["diseases"].append({
+                    "disease":    d["class_name"],
+                    "confidence": d["confidence"],
+                    "bbox":       d["bbox"],
+                })
+
+        unmatched = [
+            {"disease": d["class_name"], "confidence": d["confidence"], "bbox": d["bbox"]}
+            for d in matched if not d.get("tooth_number")
+        ]
+
+        elapsed_ms = round((time.time() - t0) * 1000)
+
+        opg_result = {
+            "teeth":              list(tooth_map.values()),
+            "unmatched_diseases": unmatched,
+            "original_image":     _encode_image(img),
+            "class_names":        list(OPG_CLASSES.values()),
+            "image_width":        img.shape[1],
+            "image_height":       img.shape[0],
+        }
+        report_link = _save_opg_report(opg_result, job['ai_report_id'])
+
+        with _jobs_lock:
+            job['status']    = 'done'
+            job['stage']     = 'done'
+            job['elapsed_s'] = round(time.time() - t0, 1)
+
+        webhook_payload: dict = {
+            "ai_report_id": job['ai_report_id'],
+            "report_type":  "file",
+            "status":       "completed",
+            "metadata": {
+                "processing_time_ms":  elapsed_ms,
+                "model_version":       "yolov8",
+                "confidence_score":    round(
+                    sum(t["confidence"] for t in teeth_dets) / len(teeth_dets), 4
+                ) if teeth_dets else 0.0,
+                "detected_conditions": list({d["class_name"] for d in matched}),
+            },
+        }
+        if report_link:
+            webhook_payload["report_link"] = report_link
+        _send_webhook(webhook_payload)
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f'[server] OPG ERROR job {job_id[:8]}: {e}\n{tb}')
+        with _jobs_lock:
+            job['status']    = 'error'
+            job['stage']     = 'error'
+            job['elapsed_s'] = round(time.time() - t0, 1)
+            job['error']     = str(e)
+        _send_webhook({
+            "ai_report_id":  job['ai_report_id'],
+            "report_type":   "file",
+            "status":        "failed",
+            "error_message": str(e),
+        })
+
+
+def _process_job(job_id: str) -> None:
+    with _jobs_lock:
+        job = _jobs[job_id]
+        job['status']  = 'running'
+        job['stage']   = 'downloading'
+        job['started'] = time.time()
+
+    def _set_stage(s: str):
+        with _jobs_lock:
+            _jobs[job_id]['stage'] = s
+
+    # ── Step 0: obtain the scan zip from media_url ────────────────────────────
+    safe_id  = re.sub(r'[^a-zA-Z0-9_-]', '_', str(job.get('media_id') or job.get('ai_report_id') or job_id))[:64]
+    zip_path = _UPLOADS / f"{safe_id}.zip"
+    try:
+        media_url = job['media_url']
+        if BACKEND_ASSETS_PATH:
+            src = Path(BACKEND_ASSETS_PATH) / media_url
+            # Handle new path structure: if file not found at old path, try with uploads/cbct/ prefix
+            if not src.exists() and media_url.startswith('admins/'):
+                src = Path(BACKEND_ASSETS_PATH) / 'uploads' / 'cbct' / media_url
+            _set_stage('Reading scan from local storage…')
+            print(f'[server] Copying {src} → {zip_path.name}')
+            shutil.copy2(str(src), str(zip_path))
+        else:
+            if not media_url.startswith(('http://', 'https://')):
+                if not BACKEND_BASE_URL:
+                    raise RuntimeError("Cannot resolve relative media_url: set BACKEND_ASSETS_PATH or BACKEND_BASE_URL")
+                media_url = BACKEND_BASE_URL + '/' + media_url.lstrip('/')
+            _set_stage('Downloading scan…')
+            print(f'[server] Downloading {media_url} → {zip_path.name}')
+            with httpx.stream('GET', media_url, timeout=300,
+                              headers={'User-Agent': 'Mozilla/5.0'},
+                              follow_redirects=True) as _dl:
+                _dl.raise_for_status()
+                with open(str(zip_path), 'wb') as _f:
+                    for _chunk in _dl.iter_bytes(chunk_size=1024 * 1024):
+                        _f.write(_chunk)
+        print(f'[server]   scan ready ({zip_path.stat().st_size / 1e6:.1f} MB)')
+    except Exception as exc:
+        with _jobs_lock:
+            _jobs[job_id]['status']  = 'error'
+            _jobs[job_id]['stage']   = 'error'
+            _jobs[job_id]['error']   = f'Download failed: {exc}'
+        return
+
+    with _jobs_lock:
+        _jobs[job_id]['zip_path'] = str(zip_path)
+
+    _cleanup_before_job(str(zip_path))
+
+    case_name = zip_path.stem
+    out_dir   = REPO_ROOT / "output" / case_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    workspace = REPO_ROOT / "workspace"
+
+    try:
+        t0 = time.time()
+        print(f'\n[server] ── Job {job_id[:8]} | {case_name} ──────────────────')
+
+        _set_stage('Stage 1/3: ToothSeg')
+        toothseg_nii, case_name = _stage1_toothseg(zip_path, workspace)
+        # Copy results to out_dir FIRST, then wipe intermediates
+        saved_toothseg = out_dir / "toothseg.nii.gz"
+        shutil.copy2(str(toothseg_nii), str(saved_toothseg))
+        _cbct_src = workspace / "imagesTs" / f"{case_name}_0000.nii.gz"
+        if _cbct_src.exists():
+            shutil.copy2(str(_cbct_src), str(out_dir / "cbct.nii.gz"))
+        # Wipe stage 1 intermediates (semseg/instseg branches, ~500 MB on disk)
+        stage1_out = workspace / "output"
+        if stage1_out.exists():
+            shutil.rmtree(stage1_out, ignore_errors=True)
+        gc.collect()
+        print(f'[server]   toothseg done  ({time.time()-t0:.0f}s)')
+
+        _set_stage('Stage 2/3: Pulp')
+        _stage2_pulp(saved_toothseg, case_name, out_dir)
+        gc.collect()
+        try:
+            import ctypes; ctypes.CDLL('libc.so.6').malloc_trim(0)
+        except Exception:
+            pass
+        print(f'[server]   pulp done  ({time.time()-t0:.0f}s)')
+
+        _set_stage('Stage 3/3: DentalSegmentator')
+        cbct_path = workspace / "imagesTs" / f"{case_name}_0000.nii.gz"
+        _stage3_dental(cbct_path, out_dir)
+        gc.collect()
+        try:
+            import ctypes; ctypes.CDLL('libc.so.6').malloc_trim(0)
+        except Exception:
+            pass
+        print(f'[server]   dental done  ({time.time()-t0:.0f}s)')
+
+        _set_stage('Building mesh cache')
+        cache_path = _build_result_cache(case_name, out_dir)
+
+        # Clean up: delete the uploaded zip and workspace temp data
+        try:
+            Path(job['zip_path']).unlink(missing_ok=True)
+        except OSError:
+            pass
+        for sub in ("imagesTs", "imagesTs_resized", "dicom", "output"):
+            d = workspace / sub
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+        gc.collect()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+        try:
+            import ctypes
+            ctypes.CDLL('libc.so.6').malloc_trim(0)
+        except Exception:
+            pass
+
+        elapsed = time.time() - t0
+        print(f'[server] ── Done in {elapsed:.0f}s ─────────────────────────\n')
+
+        with _jobs_lock:
+            job['status']      = 'done'
+            job['stage']       = 'done'
+            job['elapsed_s']   = round(elapsed, 1)
+            job['output']      = str(out_dir.relative_to(REPO_ROOT))
+            job['result_path'] = str(cache_path)
+            job['case']        = case_name
+
+        report_link = _save_cbct_report(case_name, out_dir / "result_cache.json", job['ai_report_id'])
+        webhook_payload: dict = {
+            "ai_report_id": job['ai_report_id'],
+            "report_type":  "file",
+            "status":       "completed",
+            "metadata": {
+                "processing_time_ms": round(elapsed * 1000),
+                "model_version":      "nnunet_umamba",
+            },
+        }
+        if report_link:
+            webhook_payload["report_link"] = report_link
+        _send_webhook(webhook_payload)
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f'[server] ERROR in job {job_id[:8]}: {e}\n{tb}')
+        with _jobs_lock:
+            job['status']    = 'error'
+            job['stage']     = 'error'
+            job['elapsed_s'] = round(time.time() - job.get('started', time.time()), 1)
+            job['error']     = str(e)
+        _send_webhook({
+            "ai_report_id":  job['ai_report_id'],
+            "report_type":   "file",
+            "status":        "failed",
+            "error_message": str(e),
+        })
+
+
+def _delete_result(job_id: str, out_dir: Path) -> None:
+    """Delete output directory after frontend has received the result response."""
+    try:
+        if out_dir.exists():
+            shutil.rmtree(out_dir, ignore_errors=True)
+        with _jobs_lock:
+            if job_id in _jobs:
+                _jobs[job_id]['result_path'] = None
+        print(f'[server] Output deleted for job {job_id[:8]} after delivery')
+    except Exception as e:
+        print(f'[server] Warning: result deletion failed for {job_id[:8]}: {e}')
+
+
+def _worker() -> None:
+    _models_ready.wait()
+    print('[server] Worker ready — waiting for jobs')
+    while True:
+        job_id = _job_queue.get()
+        try:
+            _process_job(job_id)
+        finally:
+            _job_queue.task_done()
+
+# ── FastAPI app ────────────────────────────────────────────────────────────────
+
+app = FastAPI(title="Dental Inference API")
+
+# Allow any origin so your website (different domain/ngrok URL) can call this
+app.add_middleware(CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# Automatically gzip any response > 1 KB  (~5-8× bandwidth reduction)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# ── inference endpoints ───────────────────────────────────────────────────────
+
+class InferRequest(BaseModel):
+    ai_report_id: int          # NestJS AiMediaReport.id — echoed back in webhook
+    media_type:   _MediaType   # 'OPG_XRAY' | 'CBCT_3D'
+    media_url:    str          # relative asset path or full http(s) URL
+
+
+@app.post("/infer", dependencies=[Depends(_verify_token)])
+async def infer(req: InferRequest):
+    """
+    Universal inference endpoint.
+    - media_type == 'cbct'  → queues 3-D pipeline, returns {job_id}
+    - media_type == 'opg'   → runs YOLO synchronously, returns full result
+    - others                → 422 Not Implemented
+    """
+    if not req.ai_report_id:
+        raise HTTPException(400, "ai_report_id is required")
+
+    # ── OPG: async YOLO via background thread → result delivered by webhook ──
+    if req.media_type == _MediaType.OPG_XRAY:
+        if _opg_model is None or _teeth_model is None:
+            raise HTTPException(503, "YOLO model weights not found")
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            _jobs[job_id] = {
+                'job_id':        job_id,
+                'ai_report_id':  req.ai_report_id,
+                'media_type':    req.media_type.value,
+                'media_url':     str(req.media_url),
+                'status':        'queued',
+                'stage':         'queued',
+                'queued':        time.time(),
+                'elapsed_s':     None,
+                'error':         None,
+            }
+        threading.Thread(target=_process_opg_job, args=(job_id,), daemon=True).start()
+        return JSONResponse({"job_id": job_id, "status": "queued"})
+
+    # ── CBCT: async 3-D pipeline (queue + poll) ───────────────────────────────
+    if req.media_type == _MediaType.CBCT_3D:
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            _jobs[job_id] = {
+                'job_id':        job_id,
+                'ai_report_id':  req.ai_report_id,
+                'media_type':    req.media_type.value,
+                'media_url':     str(req.media_url),
+                'zip_path':      None,
+                'status':        'queued',
+                'stage':         'queued',
+                'queued':        time.time(),
+                'case':          None,
+                'elapsed_s':     None,
+                'output':        None,
+                'result_path':   None,
+                'error':         None,
+            }
+        _job_queue.put(job_id)
+        return {"job_id": job_id, "status": "queued"}
+
+    raise HTTPException(422, f"media_type '{req.media_type.value}' is not yet supported")
+
+
+@app.get("/status/{job_id}")
+def status(job_id: str):
+    """Poll job progress.  'stage' shows human-readable current step."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, f"Job {job_id!r} not found")
+    return JSONResponse(job)
+
+
+@app.get("/result/{job_id}")
+def result(job_id: str, background_tasks: BackgroundTasks):
+    """
+    Return the full result JSON when status == 'done'.
+    Schedules deletion of the output directory after the response is sent —
+    the frontend is expected to persist the data it receives.
+    """
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, f"Job {job_id!r} not found")
+    if job['status'] != 'done':
+        raise HTTPException(409, f"Job not done yet (status={job['status']!r})")
+    cache_path = Path(job['result_path'])
+    if not cache_path.exists():
+        raise HTTPException(500, "Result cache file missing")
+
+    content  = cache_path.read_bytes()
+    out_dir  = cache_path.parent
+    background_tasks.add_task(_delete_result, job_id, out_dir)
+
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="result.zip"'},
+    )
+
+
+@app.get("/result_by_base/{base}")
+def result_by_base(base: str):
+    """
+    Serve a cached result_cache.json directly by its base name (folder name
+    inside output/).  Lets the frontend load any previously-computed scan
+    without re-running inference.
+    """
+    cache_path = REPO_ROOT / "output" / base / "result_cache.zip"
+    if not cache_path.exists():
+        # fallback: rebuild ZIP from existing JSON if only the old format is on disk
+        json_path = REPO_ROOT / "output" / base / "result_cache.json"
+        if not json_path.exists():
+            raise HTTPException(404, f"No cached result for {base!r}")
+        payload = json.loads(json_path.read_bytes())
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+            slim = {k: v for k, v in payload.items()
+                    if k not in ("toothseg", "pulp", "structures", "segmentator")}
+            for layer_key in ("toothseg", "pulp", "structures", "segmentator"):
+                if layer_key not in payload:
+                    continue
+                ld = payload[layer_key]
+                slim[layer_key] = {**ld, "meshes": [
+                    {k: v for k, v in m.items() if k not in ("vertices", "faces")}
+                    for m in ld.get("meshes", [])
+                ]}
+            zf.writestr("result.json", json.dumps(slim, separators=(',', ':')))
+            for layer_key in ("toothseg", "pulp", "structures", "segmentator"):
+                for mesh in payload.get(layer_key, {}).get("meshes", []):
+                    lbl = mesh.get("label", 0)
+                    if mesh.get("vertices") and mesh.get("faces"):
+                        zf.writestr(f"stls/{layer_key}_{lbl}.stl",
+                                    _mesh_to_stl_bytes(mesh["vertices"], mesh["faces"]))
+        cache_path.write_bytes(buf.getvalue())
+    return Response(
+        content=cache_path.read_bytes(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{base}.zip"'},
+    )
+
+
+@app.get("/health")
+def health():
+    return {"models_ready": _models_ready.is_set(),
+            "queue_depth":  _job_queue.qsize()}
+
+
+@app.get("/jobs")
+def jobs():
+    with _jobs_lock:
+        all_jobs = list(_jobs.values())
+    all_jobs.sort(key=lambda j: j['queued'], reverse=True)
+    return JSONResponse(all_jobs)
+
+
+# ── viewer / analysis endpoints (same as ui/app.py) ──────────────────────────
+
+@app.get("/api/scans")
+def api_scans():
+    """List result sets available on disk."""
+    output_dir = REPO_ROOT / "output"
+    if not output_dir.is_dir():
+        return []
+    scans_map: dict = {}
+    for d in output_dir.iterdir():
+        if not d.is_dir():
+            continue
+        # Only list scans that have a result_cache.json (fully processed)
+        if not (d / "result_cache.json").exists():
+            continue
+        layers = [k for k, fn in LAYER_FILES.items() if (d / fn).exists()]
+        if layers:
+            scans_map[d.name] = sorted(layers)
+    return [{"base": b, "layers": layers}
+            for b, layers in sorted(
+                scans_map.items(),
+                key=lambda kv: (output_dir / kv[0]).stat().st_mtime,
+                reverse=True,
+            )]
+
+
+@app.get("/api/mesh/{base}/{layer}")
+def api_mesh(base: str, layer: str):
+    return JSONResponse(load_mesh(base, layer))
+
+
+@app.get("/api/perio/{base}")
+def api_perio(base: str):
+    return JSONResponse(_compute_perio(base))
+
+
+@app.get("/api/labels/{base}")
+def api_labels(base: str):
+    p = _resolve_nii(base, 'toothseg')
+    if p is None:
+        return []
+    data = np.asarray(nib.load(str(p)).dataobj)
+    return sorted(set(_seq_to_fdi(int(l)) for l in np.unique(data) if l > 0) - {0})
+
+
+@app.get("/api/sliceinfo/{base}")
+def api_sliceinfo(base: str):
+    entry = _load_cbct(base)
+    if entry is None:
+        raise HTTPException(404, "cbct.nii.gz not found")
+    data, _, vmin, vmax, axis_order = entry
+    sizes = {}
+    for p in ("axial", "coronal", "sagittal"):
+        ax  = axis_order[p]
+        rem = [data.shape[i] for i in range(3) if i != ax]
+        sizes[p] = ({"w": rem[1], "h": rem[0]} if p == "axial"
+                    else {"w": rem[0], "h": rem[1]})
+    return {"shape": list(data.shape), "axis_order": axis_order,
+            "slice_sizes": sizes, "vmin": vmin, "vmax": vmax}
+
+
+@app.get("/api/cbct_volume/{base}")
+def api_cbct_volume(base: str):
+    """Return the full uint8-windowed CBCT volume as raw bytes for client-side slicing."""
+    import json as _json
+    entry = _load_cbct(base)
+    if entry is None:
+        raise HTTPException(404, "cbct.nii.gz not found")
+    data, affine, vmin, vmax, axis_order = entry
+    u8 = np.clip((data - vmin) / max(vmax - vmin, 1.0), 0.0, 1.0)
+    u8 = (u8 * 255).astype(np.uint8)
+    headers = {
+        "X-Shape":      _json.dumps(list(data.shape)),
+        "X-AxisOrder":  _json.dumps(axis_order),
+        "X-ZSign":      str(float(affine[2, axis_order["axial"]])),
+        "X-YSign":      str(float(affine[1, axis_order["coronal"]])),
+        "Access-Control-Expose-Headers": "X-Shape, X-AxisOrder, X-ZSign, X-YSign",
+    }
+    return Response(content=np.ascontiguousarray(u8).tobytes(),
+                    media_type="application/octet-stream", headers=headers)
+
+
+@app.get("/api/slice/{base}/{axis}/{index}")
+def api_slice(base: str, axis: str, index: int):
+    entry = _load_cbct(base)
+    if entry is None:
+        raise HTTPException(404, "cbct.nii.gz not found")
+    data, affine, vmin, vmax, axis_order = entry
+    ax = axis_order.get(axis)
+    if ax is None:
+        raise HTTPException(422, f"axis must be axial/coronal/sagittal")
+    index = max(0, min(data.shape[ax] - 1, index))
+    sl    = np.take(data, index, axis=ax).astype(np.float32).T
+    ax_axial  = axis_order["axial"]
+    ax_coronal = axis_order["coronal"]
+    z_sign = float(affine[2, ax_axial])
+    y_sign = float(affine[1, ax_coronal])
+    if axis != "axial" and z_sign > 0:
+        sl = np.flipud(sl)
+    if axis == "axial" and y_sign > 0:
+        sl = np.flipud(sl)
+    u8 = np.clip((sl - vmin) / max(vmax - vmin, 1.0), 0.0, 1.0)
+    return Response(content=_encode_png_gray((u8 * 255).astype(np.uint8)),
+                    media_type="image/png")
+
+
+@app.get("/api/panoramic/{base}")
+def api_panoramic(base: str):
+    """Return the panoramic radiograph PNG for a given scan."""
+    out_dir = REPO_ROOT / "output" / base
+    if not out_dir.is_dir():
+        raise HTTPException(404, f"scan {base!r} not found")
+    png_path = out_dir / "report" / "panoramic.png"
+    if not png_path.exists():
+        result = _generate_panoramic(base, out_dir)
+        if not result.get("available"):
+            raise HTTPException(422, result.get("error", "panoramic generation failed"))
+    return Response(
+        content=png_path.read_bytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/api/panoramic-info/{base}")
+def api_panoramic_info(base: str):
+    """Check if panoramic radiograph is available for a scan."""
+    png_path = REPO_ROOT / "output" / base / "report" / "panoramic.png"
+    return {"available": png_path.exists()}
+
+
+
+# ── frontend SPA ──────────────────────────────────────────────────────────────
+app.mount("/static", StaticFiles(directory=str(UI_STATIC)), name="static")
+
+@app.get("/")
+def frontend():
+    return FileResponse(str(UI_STATIC / "index.html"))
+
+
+# ── entry point ────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description="Dental inference + mesh API")
+    parser.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
+    parser.add_argument("--port",   default=7862, type=int)
+    args = parser.parse_args()
+
+    for d in [REPO_ROOT / "nnUNet_raw", REPO_ROOT / "nnUNet_preprocessed",
+              REPO_ROOT / "workspace"]:
+        d.mkdir(exist_ok=True)
+
+    threading.Thread(target=load_all_models,
+                     args=(args.device,), daemon=True).start()
+    threading.Thread(target=_worker, daemon=True).start()
+
+    print(f'\n[server] api_server.py starting on http://0.0.0.0:{args.port}')
+    print(f'[server] POST /infer         — upload DICOM zip')
+    print(f'[server] GET  /status/{{id}} — poll progress')
+    print(f'[server] GET  /result/{{id}} — gzipped meshes + perio (when done)\n')
+
+    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="warning")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Dental 3D Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d0f14; color: #d4d8e0; font-family: system-ui, sans-serif;
+         display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 264px; min-width: 264px; background: #13151a; padding: 18px 14px;
+    display: flex; flex-direction: column; gap: 14px; overflow-y: auto;
+    border-right: 1px solid #1e2128;
+  }
+  #sidebar h1 { font-size: .92rem; font-weight: 700; color: #fff;
+                letter-spacing: .06em; text-transform: uppercase; }
+
+  .section-title { font-size: .65rem; color: #505870; font-weight: 600;
+                   text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
+
+  select {
+    width: 100%; padding: 6px 8px; background: #1c1f28; color: #d4d8e0;
+    border: 1px solid #2a2e3a; border-radius: 6px; font-size: .78rem; cursor: pointer;
+  }
+  select:focus { outline: none; border-color: #3b5bdb; }
+
+  .layer-row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 5px 6px; border-radius: 5px; cursor: pointer;
+  }
+  .layer-row:hover { background: #1c1f28; }
+  .layer-row input[type=checkbox] { accent-color: #3b82f6; width: 13px; height: 13px; }
+  .layer-row .lname { flex: 1; font-size: .77rem; }
+  .layer-row .lstatus { font-size: .63rem; color: #444c60; }
+
+  .btn {
+    width: 100%; padding: 8px; border-radius: 6px; font-size: .78rem;
+    font-weight: 600; cursor: pointer; border: none; transition: background .15s;
+  }
+  .btn-primary { background: #3b82f6; color: #fff; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-primary:disabled { background: #1c2030; color: #3a3f50; cursor: default; }
+  .btn-ghost { background: #1c1f28; color: #8892a4; border: 1px solid #2a2e3a; }
+  .btn-ghost:hover { background: #222636; color: #c0c8d8; }
+  .btn-active { background: #1a3558; color: #60a5fa; border: 1px solid #3b82f6; }
+  .btn-active:hover { background: #1e3f6a; }
+
+  /* ── Legend ── */
+  #legend { display: flex; flex-direction: column; gap: 4px; }
+  .leg-section { font-size: .63rem; color: #3b5bdb; font-weight: 700;
+                 text-transform: uppercase; letter-spacing: .07em; margin-top: 6px; }
+  .leg-item { display: block; border-radius: 4px; user-select: none; }
+  .leg-item.off { opacity: .3; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Material editor ── */
+  .mat-header { display:flex; align-items:center; gap:7px; padding:3px 4px;
+                border-radius:4px; cursor:pointer; }
+  .mat-header:hover { background:#1c1f28; }
+  .mat-swatch-wrap { position:relative; flex-shrink:0; width:14px; height:14px; cursor:pointer; }
+  .mat-swatch { position:absolute; inset:0; border-radius:3px;
+                border:1px solid rgba(255,255,255,.14); }
+  .mat-color-input { position:absolute; width:0; height:0; opacity:0; pointer-events:none; }
+  .mat-name { flex:1; font-size:.73rem; }
+  .mat-vis { font-size:.68rem; color:#444c60; cursor:pointer; padding:2px;
+             user-select:none; flex-shrink:0; line-height:1; }
+  .mat-vis:hover { color:#8892a4; }
+  .mat-controls { display:none; flex-direction:column; gap:3px;
+                  padding:4px 4px 6px 21px; }
+  .leg-item.expanded .mat-controls { display:flex; }
+  .srow { display:flex; align-items:center; gap:5px; }
+  .slbl { font-size:.57rem; color:#505870; width:54px; flex-shrink:0;
+          text-transform:uppercase; letter-spacing:.04em; }
+  .sval { font-size:.60rem; color:#3b82f6; width:28px; text-align:right;
+          flex-shrink:0; font-variant-numeric:tabular-nums; }
+  input[type=range].msl { flex:1; height:2px; accent-color:#3b82f6;
+                           cursor:pointer; margin:0; }
+
+  /* ── Status bar ── */
+  #status { font-size: .68rem; color: #505870; min-height: 1.1em; }
+
+  /* ── Viewport ── */
+  #viewport { flex: 1; position: relative; background: #0d0f14; min-width: 0; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  /* ── 2D Slice panel ── */
+  #slicePanel {
+    width: 204px; min-width: 204px; background: #13151a;
+    border-left: 1px solid #1e2128;
+    display: flex; flex-direction: column; gap: 0;
+    overflow-y: auto; overflow-x: hidden;
+  }
+  #slicePanel.hidden { display: none; }
+  .sp-header {
+    padding: 10px 10px 6px; font-size: .72rem; font-weight: 700; color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #1e2128; flex-shrink: 0;
+  }
+  .sp-header span { font-size: .6rem; color: #505870; font-weight: 400; }
+  .sv-wrap { padding: 8px 8px 0; flex-shrink: 0; }
+  .sv-label { font-size: .6rem; color: #505870; text-transform: uppercase;
+              letter-spacing: .07em; margin-bottom: 4px; }
+  .sv-canvas { display: block; width: 188px; height: 125px;
+               background: #000; border-radius: 4px; image-rendering: pixelated; }
+  .sv-slider { width: 188px; accent-color: #3b82f6; cursor: pointer;
+               margin: 4px 0 8px; display: block; }
+  .sv-idx { font-size: .57rem; color: #444c60; text-align: right; width: 188px;
+            display: block; margin-bottom: 2px; }
+
+  #hint {
+    position: absolute; bottom: 12px; right: 14px;
+    font-size: .62rem; color: #2a3040; text-align: right; line-height: 1.8;
+    pointer-events: none;
+  }
+
+  /* loading overlay */
+  #loader {
+    display: none; position: absolute; inset: 0;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(3px);
+    font-size: .85rem; color: #8892a4; flex-direction: column; gap: 10px;
+  }
+  #loader.on { display: flex; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #1c2030;
+             border-top-color: #3b82f6; border-radius: 50%;
+             animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Perio severity row */
+  .perio-row { display:flex; align-items:center; gap:6px; font-size:.72rem; padding:2px 0; }
+  .perio-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .perio-count { color:#505870; font-size:.65rem; margin-left:auto; }
+
+  /* STL download button */
+  .mat-dl { font-size:.65rem; color:#3b82f6; cursor:pointer; padding:1px 4px;
+            border-radius:3px; flex-shrink:0; line-height:1.4;
+            background:none; border:1px solid #1e3a6e; }
+  .mat-dl:hover { background:#1a3558; color:#93c5fd; border-color:#3b82f6; }
+  .btn-dl-all { width:100%; padding:7px; border-radius:6px; font-size:.75rem;
+                font-weight:600; cursor:pointer; border:1px solid #1e3a6e;
+                background:#111827; color:#3b82f6; margin-top:4px; transition:background .15s; }
+  .btn-dl-all:hover { background:#1a3558; color:#93c5fd; }
+  .btn-dl-all:disabled { opacity:.35; cursor:default; }
+
+  /* STL view button */
+  .mat-vw { font-size:.65rem; color:#22c55e; cursor:pointer; padding:1px 4px;
+            border-radius:3px; flex-shrink:0; line-height:1.4;
+            background:none; border:1px solid #14532d; }
+  .mat-vw:hover { background:#14532d; color:#86efac; border-color:#22c55e; }
+
+  /* STL preview modal */
+  #stlModal {
+    display:none; position:fixed; inset:0; z-index:1000;
+    align-items:center; justify-content:center;
+    background:rgba(0,0,0,.72); backdrop-filter:blur(4px);
+  }
+  #stlModal.on { display:flex; }
+  #stlModalBox {
+    background:#13151a; border:1px solid #2a2e3a; border-radius:10px;
+    width:560px; max-width:95vw; display:flex; flex-direction:column;
+    box-shadow:0 8px 40px rgba(0,0,0,.6);
+  }
+  #stlModalHeader {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; border-bottom:1px solid #1e2128;
+  }
+  #stlModalTitle { font-size:.82rem; font-weight:700; color:#e2e8f0; }
+  #stlModalClose {
+    background:none; border:none; color:#505870; font-size:1.1rem;
+    cursor:pointer; padding:2px 6px; border-radius:4px; line-height:1;
+  }
+  #stlModalClose:hover { background:#1c1f28; color:#d4d8e0; }
+  #stlModalCanvas { display:block; width:100%; border-radius:0 0 10px 10px; }
+  #stlModalFooter {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 14px; border-top:1px solid #1e2128;
+    font-size:.62rem; color:#3a4050;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Dental Viewer</h1>
+
+  <div>
+    <div class="section-title">Scan</div>
+    <select id="scanSelect"><option>— loading —</option></select>
+  </div>
+
+  <div>
+    <div class="section-title">Layers</div>
+    <div id="layerList"></div>
+  </div>
+
+  <button class="btn btn-primary" id="loadBtn" disabled>Load layers</button>
+  <button class="btn btn-ghost" id="clearBtn">Clear scene</button>
+  <button class="btn btn-ghost" id="pulpToggleBtn" disabled>Show Pulp</button>
+
+  <div id="status">Fetching scan list…</div>
+
+  <div>
+    <div class="section-title" style="margin-bottom:8px">Legend (click = toggle)</div>
+    <div id="legend"></div>
+    <button class="btn-dl-all" id="dlAllBtn" disabled>⬇ Download All STLs</button>
+  </div>
+
+  <!-- ── Crown Generator ──────────────────────────────────────── -->
+  <div style="border-top:1px solid #1e2128; padding-top:12px;">
+    <div class="section-title" style="margin-bottom:8px">Crown Generator</div>
+
+    <div style="margin-bottom:6px;">
+      <div class="section-title" style="font-size:.6rem;margin-bottom:3px">Tooth (FDI)</div>
+      <select id="crownToothSelect" style="width:100%"><option value="">— load teeth first —</option></select>
+    </div>
+
+    <div style="margin-bottom:4px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <span style="font-size:.62rem;color:#505870;text-transform:uppercase;letter-spacing:.06em;">Shell offset</span>
+        <span id="crownOffsetVal" style="font-size:.62rem;color:#3b82f6;">1.0 mm</span>
+      </div>
+      <input type="range" id="crownOffset" min="0.3" max="3.0" step="0.1" value="1.0"
+             style="width:100%;accent-color:#3b82f6;cursor:pointer;">
+    </div>
+
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <span style="font-size:.62rem;color:#505870;text-transform:uppercase;letter-spacing:.06em;">Surface detail</span>
+        <span id="crownSmoothVal" style="font-size:.62rem;color:#3b82f6;">High</span>
+      </div>
+      <input type="range" id="crownSmooth" min="0" max="2" step="1" value="0"
+             style="width:100%;accent-color:#3b82f6;cursor:pointer;">
+      <div style="display:flex;justify-content:space-between;font-size:.55rem;color:#3a4050;margin-top:1px;">
+        <span>Max detail</span><span>Smooth</span>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="crownGenBtn" disabled>Generate Crown</button>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="btn btn-ghost" id="crownViewBtn" style="flex:1;display:none">Preview</button>
+      <button class="btn btn-ghost" id="crownDlBtn"   style="flex:1;display:none">⬇ STL</button>
+    </div>
+    <div id="crownStatus" style="font-size:.65rem;color:#505870;margin-top:6px;line-height:1.5;"></div>
+  </div>
+
+  <!-- ── Periodontal Analysis ─────────────────────────────────── -->
+  <div style="border-top:1px solid #1e2128; padding-top:12px;">
+    <div class="section-title" style="margin-bottom:8px">Periodontal Analysis</div>
+    <button class="btn btn-ghost" id="perióBtn" disabled>Analyze Bone Levels</button>
+    <button class="btn btn-ghost" id="perióClearBtn" style="margin-top:6px;display:none">Hide Perio Lines</button>
+    <div id="perióStatus" style="font-size:.65rem;color:#505870;margin-top:6px;line-height:1.6;"></div>
+    <div id="perióLegend" style="margin-top:8px;display:flex;flex-direction:column;gap:3px;"></div>
+  </div>
+
+</div>
+
+<div id="viewport">
+  <div id="loader"><div class="spinner"></div><span id="loaderMsg">Loading…</span></div>
+  <div id="hint">Drag: rotate &nbsp;·&nbsp; Scroll: zoom &nbsp;·&nbsp; Right-drag: pan</div>
+</div>
+
+<!-- ── 2D CBCT slice panel ───────────────────────────────────────────── -->
+<div id="slicePanel" class="hidden">
+  <div class="sp-header">CBCT Slices <span id="spHint"></span></div>
+
+  <div class="sv-wrap">
+    <div class="sv-label">Axial</div>
+    <canvas class="sv-canvas" id="axialCanvas" width="188" height="188"></canvas>
+    <span  class="sv-idx"   id="axialIdx"></span>
+    <input class="sv-slider" id="axialSlider" type="range" min="0" max="0" value="0">
+  </div>
+
+  <div class="sv-wrap">
+    <div class="sv-label">Coronal</div>
+    <canvas class="sv-canvas" id="coronalCanvas" width="188" height="188"></canvas>
+    <span  class="sv-idx"   id="coronalIdx"></span>
+    <input class="sv-slider" id="coronalSlider" type="range" min="0" max="0" value="0">
+  </div>
+
+  <div class="sv-wrap" style="padding-bottom:12px">
+    <div class="sv-label">Sagittal</div>
+    <canvas class="sv-canvas" id="sagittalCanvas" width="188" height="188"></canvas>
+    <span  class="sv-idx"   id="sagittalIdx"></span>
+    <input class="sv-slider" id="sagittalSlider" type="range" min="0" max="0" value="0">
+  </div>
+</div>
+
+<!-- STL preview modal -->
+<div id="stlModal">
+  <div id="stlModalBox">
+    <div id="stlModalHeader">
+      <span id="stlModalTitle">STL Preview</span>
+      <button id="stlModalClose">✕</button>
+    </div>
+    <canvas id="stlModalCanvas" height="420"></canvas>
+    <div id="stlModalFooter">
+      <span id="stlModalInfo"></span>
+      <button class="mat-dl" id="stlModalDl" style="font-size:.7rem;padding:3px 8px;">⬇ Download STL</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }  from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ── FDI tooth names ─────────────────────────────────────────────────────────
+const FDI_NAMES = {
+  11:'UR Central Incisor',12:'UR Lateral Incisor',13:'UR Canine',
+  14:'UR 1st Premolar',15:'UR 2nd Premolar',16:'UR 1st Molar',
+  17:'UR 2nd Molar',18:'UR 3rd Molar',
+  21:'UL Central Incisor',22:'UL Lateral Incisor',23:'UL Canine',
+  24:'UL 1st Premolar',25:'UL 2nd Premolar',26:'UL 1st Molar',
+  27:'UL 2nd Molar',28:'UL 3rd Molar',
+  31:'LL Central Incisor',32:'LL Lateral Incisor',33:'LL Canine',
+  34:'LL 1st Premolar',35:'LL 2nd Premolar',36:'LL 1st Molar',
+  37:'LL 2nd Molar',38:'LL 3rd Molar',
+  41:'LR Central Incisor',42:'LR Lateral Incisor',43:'LR Canine',
+  44:'LR 1st Premolar',45:'LR 2nd Premolar',46:'LR 1st Molar',
+  47:'LR 2nd Molar',48:'LR 3rd Molar',
+};
+
+// ── Realistic clinical material definitions ──────────────────────────────────
+//
+//  Teeth (toothseg): ivory/white enamel — low roughness for specular sheen,
+//    very slight subsurface warmth.  All 32 teeth share the same ivory base;
+//    subtle hue variation per tooth so they remain distinguishable.
+//
+//  Pulp: warm coral-pink — slightly translucent, soft roughness.
+//
+//  Mandible (2): cortical bone — semi-transparent warm tan, high roughness.
+//  Maxilla  (1): cancellous bone — lighter, even more transparent.
+//  Canal    (5): mandibular canal — opaque golden-yellow tube.
+
+// Base ivory for all teeth, with tiny per-tooth hue shift so they're
+// distinguishable without looking like a rainbow.
+function toothHue(fdi) {
+  // Keep shifts very subtle: ±3° hue, ±5% lightness only
+  const idx = [11,12,13,14,15,16,17,18,
+               21,22,23,24,25,26,27,28,
+               31,32,33,34,35,36,37,38,
+               41,42,43,44,45,46,47,48].indexOf(fdi);
+  if (idx < 0) return srgb(0xEFE2B0);
+  const hueDeg  = (idx * 4.5) % 22 - 11;   // -11° … +11°
+  const lightDelta = (idx % 4) * 0.012;     // 0 … 0.036
+  const c = srgb(0xEFE2B0);                 // warm cream-yellow ≈ dental shade A2
+  c.offsetHSL(hueDeg / 360, 0, lightDelta - 0.018);
+  return c;
+}
+
+// Pulp: match parent tooth quadrant but distinctly pink/coral
+function pulpColor(fdi) {
+  // base = coral pink; offset slightly per quadrant
+  const base = srgb(0xC86858);
+  if      (fdi >= 11 && fdi <= 18) base.offsetHSL( 0.00,  0.05,  0.04);
+  else if (fdi >= 21 && fdi <= 28) base.offsetHSL( 0.02,  0.00, -0.02);
+  else if (fdi >= 31 && fdi <= 38) base.offsetHSL(-0.02,  0.00,  0.02);
+  else if (fdi >= 41 && fdi <= 48) base.offsetHSL( 0.01, -0.05, -0.04);
+  return base;
+}
+
+// Structure materials: Diagnocat-style vivid clinical colors
+// Mandible = solid blue shell  |  Maxilla = pink-purple  |  Canal = golden tube
+const STRUCT_DEFS = {
+  1: { color: 0xDFCAAA, opacity: 1.0,  roughness: 0.88, name: 'Maxilla'            },
+  2: { color: 0xD4B898, opacity: 1.0,  roughness: 0.85, name: 'Mandible'           },
+  5: { color: 0xF0A818, opacity: 0.94, roughness: 0.28, name: 'Mandibular Canal'   },
+};
+
+// Legacy segmentator palette (fallback)
+const SEG_NAMES  = { 1:'Maxilla & Skull', 2:'Mandible', 3:'Upper Teeth', 4:'Lower Teeth', 5:'Mandibular Canal' };
+const PALETTE = [
+  0x5b9bd5, 0xe87c5a, 0x6ecf8e, 0xf0c060, 0xb87cc8,
+  0xe86c8c, 0x60c8d8, 0xd8a860, 0x88c870, 0x8870d8,
+];
+
+const LAYER_TITLES = {
+  toothseg:   'Teeth (FDI)',
+  pulp:       'Dental Pulp',
+  structures: 'Bone & Canal',
+  segmentator:'Segmentator',
+};
+const LAYER_ORDER = ['structures', 'toothseg', 'pulp', 'segmentator'];
+
+// ── Renderer ─────────────────────────────────────────────────────────────────
+const viewport  = document.getElementById('viewport');
+const loaderEl  = document.getElementById('loader');
+const loaderMsg = document.getElementById('loaderMsg');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace    = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled   = true;
+renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x0d0f14);
+viewport.appendChild(renderer.domElement);
+
+// ── PBR Environment (RoomEnvironment gives realistic reflections on enamel) ──
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+const roomEnv = pmrem.fromScene(new RoomEnvironment(renderer)).texture;
+// Apply to scene so MeshStandardMaterial picks up IBL
+const scene = new THREE.Scene();
+scene.environment    = roomEnv;
+scene.environmentIntensity = 0.60;  // enough IBL for enamel sheen without looking plastic
+scene.fog            = new THREE.Fog(0x0d0f14, 800, 4000);
+
+// ── Camera ───────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 50000);
+camera.position.set(0, 0, 500);
+
+// ── Lights ───────────────────────────────────────────────────────────────────
+// Soft ambient fill
+scene.add(new THREE.HemisphereLight(0xfff8f0, 0x1a2030, 0.55));
+
+// Key light — warm overhead (operating-lamp feel)
+const keyLight = new THREE.DirectionalLight(0xfff5e8, 1.6);
+keyLight.position.set(0.8, 2, 1.5);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(1024, 1024);
+keyLight.shadow.camera.near = 1;
+keyLight.shadow.camera.far  = 5000;
+scene.add(keyLight);
+
+// Cool fill from opposite side
+const fillLight = new THREE.DirectionalLight(0xd0e4ff, 0.55);
+fillLight.position.set(-2, -0.5, -1);
+scene.add(fillLight);
+
+// Subtle rim from below-back (gives depth to bone shells)
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.25);
+rimLight.position.set(0, -2, -3);
+scene.add(rimLight);
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping   = true;
+controls.dampingFactor   = 0.06;
+controls.minDistance     = 1;
+controls.maxDistance     = 20000;
+controls.screenSpacePanning = true;
+
+// ── Resize ───────────────────────────────────────────────────────────────────
+function resize() {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Render loop ──────────────────────────────────────────────────────────────
+(function tick() {
+  requestAnimationFrame(tick);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// ── Scene state ──────────────────────────────────────────────────────────────
+const layerGroups = {};
+let paletteCursor = 0;
+
+function disposeGroup(g) {
+  g.traverse(o => {
+    if (o.isMesh || o.isSprite) {
+      o.geometry && o.geometry.dispose();
+      if (o.material) {
+        o.material.map && o.material.map.dispose();
+        o.material.dispose();
+      }
+    }
+  });
+  scene.remove(g);
+}
+
+const dlAllBtn = document.getElementById('dlAllBtn');
+dlAllBtn.addEventListener('click', _downloadAllSTLs);
+
+function clearAll() {
+  Object.keys(layerGroups).forEach(k => { disposeGroup(layerGroups[k]); delete layerGroups[k]; });
+  paletteCursor = 0;
+  document.getElementById('legend').innerHTML = '';
+  dlAllBtn.disabled = true;
+  // Reset crown state
+  if (_crownMesh) { scene.remove(_crownMesh); _crownMesh.geometry.dispose(); _crownMesh.material.dispose(); _crownMesh = null; }
+  _crownGeo = null; _crownName = '';
+  if (typeof crownViewBtn !== 'undefined') { crownViewBtn.style.display = 'none'; crownDlBtn.style.display = 'none'; }
+  if (typeof crownStatus   !== 'undefined') crownStatus.textContent = '';
+  if (typeof _refreshCrownSelect === 'function') _refreshCrownSelect();
+  // Reset pulp toggle state
+  pulpModeOn = false;
+  if (pulpToggleBtn) {
+    pulpToggleBtn.textContent = 'Show Pulp';
+    pulpToggleBtn.classList.remove('btn-active');
+    pulpToggleBtn.classList.add('btn-ghost');
+    pulpToggleBtn.disabled = true;
+  }
+}
+
+function hexStr(n) { return '#' + n.toString(16).padStart(6, '0'); }
+// Create a Three.js Color that looks like the given sRGB hex when rendered.
+// Without this, new THREE.Color(hex) treats the value as *linear* RGB and
+// colours appear washed-out/white after ACES tonemapping.
+const srgb = hex => new THREE.Color().setHex(hex, THREE.SRGBColorSpace);
+
+// ── STL export ───────────────────────────────────────────────────────────────
+function _geometryToSTL(geo, filename) {
+  const pos  = geo.getAttribute('position');
+  const idx  = geo.getIndex();
+  const nTri = idx ? idx.count / 3 : pos.count / 3;
+
+  const buf  = new ArrayBuffer(84 + nTri * 50);
+  const view = new DataView(buf);
+  view.setUint32(80, nTri, true);   // triangle count (little-endian)
+
+  let off = 84;
+  for (let i = 0; i < nTri; i++) {
+    const i0 = idx ? idx.getX(i*3)   : i*3;
+    const i1 = idx ? idx.getX(i*3+1) : i*3+1;
+    const i2 = idx ? idx.getX(i*3+2) : i*3+2;
+    const ax = pos.getX(i0), ay = pos.getY(i0), az = pos.getZ(i0);
+    const bx = pos.getX(i1), by = pos.getY(i1), bz = pos.getZ(i1);
+    const cx = pos.getX(i2), cy = pos.getY(i2), cz = pos.getZ(i2);
+    const ex = bx-ax, ey = by-ay, ez = bz-az;
+    const fx = cx-ax, fy = cy-ay, fz = cz-az;
+    view.setFloat32(off, ey*fz-ez*fy, true); off+=4;
+    view.setFloat32(off, ez*fx-ex*fz, true); off+=4;
+    view.setFloat32(off, ex*fy-ey*fx, true); off+=4;
+    view.setFloat32(off, ax, true); off+=4; view.setFloat32(off, ay, true); off+=4; view.setFloat32(off, az, true); off+=4;
+    view.setFloat32(off, bx, true); off+=4; view.setFloat32(off, by, true); off+=4; view.setFloat32(off, bz, true); off+=4;
+    view.setFloat32(off, cx, true); off+=4; view.setFloat32(off, cy, true); off+=4; view.setFloat32(off, cz, true); off+=4;
+    view.setUint16(off, 0, true); off+=2;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf], {type:'model/stl'}));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function _downloadAllSTLs() {
+  Object.entries(layerGroups).forEach(([layerName, group]) => {
+    if (!group.visible) return;
+    group.children.forEach(obj => {
+      if (!obj.isMesh) return;
+      const lbl = obj.userData.label ?? 'x';
+      _geometryToSTL(obj.geometry, `${layerName}_${lbl}.stl`);
+    });
+  });
+}
+
+// ── STL preview modal (lazy-init — renderer created on first open) ────────────
+const stlModal       = document.getElementById('stlModal');
+const stlModalTitle  = document.getElementById('stlModalTitle');
+const stlModalInfo   = document.getElementById('stlModalInfo');
+const stlModalDl     = document.getElementById('stlModalDl');
+const stlModalClose  = document.getElementById('stlModalClose');
+const stlModalCanvas = document.getElementById('stlModalCanvas');
+
+let _m = null;   // holds {renderer, scene, camera, controls} — built on first open
+let _mMesh = null, _mAnimId = null, _mCurrentGeo = null, _mCurrentName = '';
+
+function _initModal() {
+  if (_m) return;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, canvas: stlModalCanvas });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x0d0f14);
+  renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  renderer.outputColorSpace    = THREE.SRGBColorSpace;
+
+  const w = stlModalCanvas.clientWidth || 520;
+  renderer.setSize(w, 420, false);
+
+  const mScene  = new THREE.Scene();
+  const mCamera = new THREE.PerspectiveCamera(40, w / 420, 0.1, 50000);
+  mScene.add(new THREE.HemisphereLight(0xfff8f0, 0x1a2030, 0.8));
+  const kl = new THREE.DirectionalLight(0xfff5e8, 1.8);
+  kl.position.set(1, 2, 2); mScene.add(kl);
+  const fl = new THREE.DirectionalLight(0xd0e4ff, 0.6);
+  fl.position.set(-2, -1, -1); mScene.add(fl);
+
+  const mControls = new OrbitControls(mCamera, stlModalCanvas);
+  mControls.enableDamping = true; mControls.dampingFactor = 0.07;
+
+  _m = { renderer, scene: mScene, camera: mCamera, controls: mControls };
+
+  window.addEventListener('resize', () => {
+    if (!stlModal.classList.contains('on')) return;
+    const w2 = stlModalCanvas.clientWidth || 520;
+    _m.renderer.setSize(w2, 420, false);
+    _m.camera.aspect = w2 / 420;
+    _m.camera.updateProjectionMatrix();
+  });
+}
+
+function openSTLPreview(geo, name, color) {
+  _initModal();
+  cancelAnimationFrame(_mAnimId);
+  if (_mMesh) { _m.scene.remove(_mMesh); _mMesh.geometry.dispose(); _mMesh.material.dispose(); _mMesh = null; }
+
+  _mCurrentGeo = geo; _mCurrentName = name;
+
+  const clonedGeo = geo.clone();
+  const mat = new THREE.MeshStandardMaterial({
+    color: color ?? new THREE.Color(0xEFE2B0),
+    roughness: 0.25, metalness: 0.02, side: THREE.DoubleSide,
+  });
+  _mMesh = new THREE.Mesh(clonedGeo, mat);
+  _m.scene.add(_mMesh);
+
+  const box = new THREE.Box3().setFromObject(_mMesh);
+  const cen = new THREE.Vector3(); box.getCenter(cen);
+  const sz  = new THREE.Vector3(); box.getSize(sz);
+  const dist = (sz.length() * 0.5 / Math.tan(THREE.MathUtils.degToRad(40) / 2)) * 1.4;
+  _m.controls.target.copy(cen);
+  _m.camera.position.set(cen.x, cen.y, cen.z + dist);
+  _m.camera.updateProjectionMatrix();
+  _m.controls.update();
+
+  const nTri  = clonedGeo.getIndex() ? clonedGeo.getIndex().count / 3 : clonedGeo.getAttribute('position').count / 3;
+  const nVert = clonedGeo.getAttribute('position').count;
+  stlModalTitle.textContent = name;
+  stlModalInfo.textContent  = `${nVert.toLocaleString()} vertices · ${Math.round(nTri).toLocaleString()} triangles`;
+
+  stlModal.classList.add('on');
+
+  // Resize now that modal is visible
+  const w = stlModalCanvas.clientWidth || 520;
+  _m.renderer.setSize(w, 420, false);
+  _m.camera.aspect = w / 420;
+  _m.camera.updateProjectionMatrix();
+
+  function tick() { _mAnimId = requestAnimationFrame(tick); _m.controls.update(); _m.renderer.render(_m.scene, _m.camera); }
+  tick();
+}
+
+stlModalClose.addEventListener('click', () => {
+  stlModal.classList.remove('on');
+  cancelAnimationFrame(_mAnimId);
+});
+stlModal.addEventListener('click', e => { if (e.target === stlModal) stlModalClose.click(); });
+stlModalDl.addEventListener('click', () => {
+  if (_mCurrentGeo) _geometryToSTL(_mCurrentGeo, `${_mCurrentName.replace(/[\s/]+/g,'_')}.stl`);
+});
+
+// ── Material-editor legend item ───────────────────────────────────────────────
+// Creates an expandable row: click header to expand/collapse, click swatch to
+// pick a colour, four sliders for opacity / roughness / metalness / emissive.
+function makeLegendItem(mesh, mat, color, name, legend) {
+  const toHex6 = c => '#' + c.getHex(THREE.SRGBColorSpace).toString(16).padStart(6, '0');
+
+  const item = document.createElement('div');
+  item.className = 'leg-item';
+
+  // ── Header row ──────────────────────────────────────────────────────────────
+  const header = document.createElement('div');
+  header.className = 'mat-header';
+
+  // Colour swatch (visible) + hidden native colour input
+  const swatchWrap = document.createElement('div');
+  swatchWrap.className = 'mat-swatch-wrap';
+  const swatch = document.createElement('div');
+  swatch.className = 'mat-swatch';
+  swatch.style.background = toHex6(color);
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.className = 'mat-color-input';
+  colorInput.value = toHex6(color);
+  swatchWrap.append(swatch, colorInput);
+
+  // Label + visibility toggle
+  const nameEl = document.createElement('span');
+  nameEl.className = 'mat-name';
+  nameEl.textContent = name;
+  const visEl = document.createElement('span');
+  visEl.className = 'mat-vis';
+  visEl.title = 'Toggle visibility';
+  visEl.textContent = '◉';
+
+  const dlEl = document.createElement('button');
+  dlEl.className = 'mat-dl';
+  dlEl.title = 'Download STL';
+  dlEl.textContent = '↓';
+  dlEl.addEventListener('click', e => {
+    e.stopPropagation();
+    _geometryToSTL(mesh.geometry, `${name.replace(/[\s/]+/g,'_')}.stl`);
+  });
+
+  const vwEl = document.createElement('button');
+  vwEl.className = 'mat-vw';
+  vwEl.title = 'Preview STL';
+  vwEl.textContent = '👁';
+  vwEl.addEventListener('click', e => {
+    e.stopPropagation();
+    openSTLPreview(mesh.geometry, name, color);
+  });
+
+  header.append(swatchWrap, nameEl, visEl, vwEl, dlEl);
+  item.appendChild(header);
+
+  // ── Slider panel ────────────────────────────────────────────────────────────
+  const controls = document.createElement('div');
+  controls.className = 'mat-controls';
+
+  function mkSlider(label, min, max, step, value) {
+    const row = document.createElement('div');
+    row.className = 'srow';
+    const lbl = document.createElement('span');
+    lbl.className = 'slbl';
+    lbl.textContent = label;
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.className = 'msl';
+    sl.min = min; sl.max = max; sl.step = step; sl.value = value;
+    const vd = document.createElement('span');
+    vd.className = 'sval';
+    vd.textContent = parseFloat(value).toFixed(2);
+    row.append(lbl, sl, vd);
+    controls.appendChild(row);
+    return { sl, vd };
+  }
+
+  const Op = mkSlider('Opacity',   0, 1, 0.01, mat.opacity);
+  const Rg = mkSlider('Roughness', 0, 1, 0.01, mat.roughness);
+  const Mt = mkSlider('Metalness', 0, 1, 0.01, mat.metalness);
+  const Em = mkSlider('Emissive',  0, 1, 0.01, mat.emissiveIntensity ?? 0);
+  item.appendChild(controls);
+
+  // ── Events ──────────────────────────────────────────────────────────────────
+  // Swatch click → programmatically open the colour picker
+  swatchWrap.addEventListener('click', e => {
+    e.stopPropagation();
+    colorInput.click();
+  });
+
+  colorInput.addEventListener('input', e => {
+    const hex = parseInt(e.target.value.slice(1), 16);
+    mat.color.setHex(hex, THREE.SRGBColorSpace);  // picker value is always sRGB
+    swatch.style.background = e.target.value;
+  });
+
+  // Header click (not swatch, not vis) → expand / collapse sliders
+  header.addEventListener('click', e => {
+    if (swatchWrap.contains(e.target) || visEl.contains(e.target)) return;
+    item.classList.toggle('expanded');
+  });
+
+  // Visibility toggle
+  visEl.addEventListener('click', e => {
+    e.stopPropagation();
+    mesh.visible = !mesh.visible;
+    visEl.textContent = mesh.visible ? '◉' : '○';
+    item.classList.toggle('off', !mesh.visible);
+  });
+
+  Op.sl.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    mat.opacity = v; mat.transparent = v < 1; mat.depthWrite = v >= 1;
+    mat.needsUpdate = true; Op.vd.textContent = v.toFixed(2);
+  });
+  Rg.sl.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    mat.roughness = v; Rg.vd.textContent = v.toFixed(2);
+  });
+  Mt.sl.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    mat.metalness = v; Mt.vd.textContent = v.toFixed(2);
+  });
+  Em.sl.addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    mat.emissiveIntensity = v; Em.vd.textContent = v.toFixed(2);
+  });
+
+  legend.appendChild(item);
+}
+
+// Render order — bone must render AFTER teeth so the solid bone surface covers
+// roots that lie inside it (higher renderOrder = drawn later = wins depth test).
+//   pulp: 0  →  toothseg: 1  →  segmentator: 2  →  structures bone: 3
+// Canal (label 5) is assigned renderOrder 4 separately below.
+const LAYER_RENDER_ORDER = { pulp: 0, toothseg: 1, segmentator: 2, structures: 3 };
+
+// ── Mesh builder ─────────────────────────────────────────────────────────────
+function addLayer(layerName, meshData) {
+  if (layerGroups[layerName]) { disposeGroup(layerGroups[layerName]); delete layerGroups[layerName]; }
+
+  const group  = new THREE.Group();
+  const legend = document.getElementById('legend');
+
+  const secEl = document.createElement('div');
+  secEl.className = 'leg-section';
+  secEl.textContent = LAYER_TITLES[layerName] || layerName;
+  legend.appendChild(secEl);
+
+  meshData.meshes.forEach(m => {
+    let color, opacity, name, roughness, metalness, side, envMapIntensity, emissive, emissiveIntensity;
+
+    if (layerName === 'toothseg') {
+      // ── Teeth: ivory enamel, fully opaque by default ──────────────────────
+      // "Show Pulp" toggle will switch to transparent mode at runtime.
+      color            = toothHue(m.label);
+      opacity          = 1.0;
+      name             = `${m.label}  ${FDI_NAMES[m.label] || 'Tooth ' + m.label}`;
+      roughness        = 0.20;
+      metalness        = 0.03;
+      envMapIntensity  = 0.85;
+      side             = THREE.DoubleSide;
+
+    } else if (layerName === 'pulp') {
+      // ── Pulp: coral-pink, fully opaque so it shows through transparent tooth
+      // Three.js renders opaque objects first → pulp is in depth buffer before
+      // the transparent tooth shell is drawn on top of it.
+      color            = pulpColor(m.label);
+      opacity          = 1.0;   // opaque → renders in pass 1, before teeth
+      name             = `${m.label} Pulp` + (FDI_NAMES[m.label] ? ` (${FDI_NAMES[m.label]})` : '');
+      roughness        = 0.55;
+      metalness        = 0.0;
+      envMapIntensity  = 0.25;
+      side             = THREE.FrontSide;
+
+    } else if (layerName === 'structures') {
+      // ── Bone & canal ─────────────────────────────────────────────────────
+      const def        = STRUCT_DEFS[m.label] || { color: 0xcccccc, opacity: 0.60, roughness: 0.85, name: `Structure ${m.label}` };
+      color            = srgb(def.color);
+      opacity          = def.opacity;
+      name             = def.name;
+      roughness        = def.roughness;
+      metalness        = 0.0;
+      envMapIntensity  = m.label === 5 ? 0.6 : 0.15;
+      // DoubleSide: renders inner alveolar walls that wrap around root sockets,
+      // which is what occludes the roots. Safe with opacity=1.0 because the
+      // front (outer) faces write depth first and block back faces automatically.
+      side             = THREE.DoubleSide;
+      // Subtle warm emissive on bone/gum gives organic subsurface-scatter feel
+      emissive          = (m.label === 1 || m.label === 2)
+                          ? srgb(0xC4A878) : new THREE.Color(0x000000);
+      emissiveIntensity = (m.label === 1 || m.label === 2) ? 0.07 : 0.0;
+
+    } else {
+      // ── Legacy segmentator fallback ───────────────────────────────────────
+      color            = srgb(PALETTE[paletteCursor++ % PALETTE.length]);
+      const isBone     = m.label === 1 || m.label === 2;
+      opacity          = isBone ? 0.22 : m.label === 5 ? 0.80 : 0.92;
+      name             = SEG_NAMES[m.label] || `Label ${m.label}`;
+      roughness        = isBone ? 0.88 : 0.50;
+      metalness        = 0.0;
+      envMapIntensity  = isBone ? 0.1 : 0.4;
+      side             = isBone ? THREE.DoubleSide : THREE.FrontSide;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(m.vertices), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(m.faces), 1));
+    geo.computeVertexNormals();
+
+    const depthWrite = opacity >= 1.0;
+    const mat = new THREE.MeshStandardMaterial({
+      color,
+      roughness,
+      metalness,
+      emissive:          emissive          ?? new THREE.Color(0x000000),
+      emissiveIntensity: emissiveIntensity ?? 0.0,
+      envMapIntensity,
+      transparent: opacity < 1,
+      opacity,
+      side,
+      depthWrite,
+    });
+
+    // Canal (label 5) lives inside the bone — give it a higher renderOrder
+    // and disable depthTest so it always shows through the solid bone mesh.
+    const isCanal = (layerName === 'structures' || layerName === 'segmentator') && m.label === 5;
+    if (isCanal) {
+      mat.depthTest  = false;
+      mat.depthWrite = false;
+    }
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder   = isCanal ? 5 : (LAYER_RENDER_ORDER[layerName] ?? 0);
+    mesh.castShadow    = opacity > 0.5 && !isCanal;
+    mesh.receiveShadow = !isCanal;
+    mesh.userData      = { label: m.label, layerName };
+    group.add(mesh);
+
+    // Material-editor legend entry (colour picker + sliders)
+    makeLegendItem(mesh, mat, color, name, legend);
+  });
+
+  scene.add(group);
+  layerGroups[layerName] = group;
+  dlAllBtn.disabled = false;
+  if (layerName === 'toothseg') _refreshCrownSelect();
+  refitCamera();
+}
+
+// ── Camera fit ───────────────────────────────────────────────────────────────
+function refitCamera() {
+  const box = new THREE.Box3();
+  Object.values(layerGroups).forEach(g => box.expandByObject(g));
+  if (box.isEmpty()) return;
+  const center = new THREE.Vector3(), sizeV = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(sizeV);
+  const dist = (sizeV.length() * 0.5 / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)) * 1.3;
+  controls.target.copy(center);
+  camera.position.set(center.x, center.y, center.z + dist);
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+// ── UI wiring ────────────────────────────────────────────────────────────────
+const scanSelect = document.getElementById('scanSelect');
+const layerList  = document.getElementById('layerList');
+const loadBtn    = document.getElementById('loadBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const statusEl   = document.getElementById('status');
+
+let scansData = [];
+
+async function fetchScans() {
+  try {
+    const r = await fetch('/api/scans');
+    scansData = await r.json();
+    scanSelect.innerHTML = '';
+    if (!scansData.length) {
+      scanSelect.innerHTML = '<option>No scans found</option>';
+      statusEl.textContent = 'No output folders detected.'; return;
+    }
+    scansData.forEach((s, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = s.base;
+      scanSelect.appendChild(o);
+    });
+    statusEl.textContent = `${scansData.length} scan(s) found.`;
+    document.getElementById('perióBtn').disabled = false;
+    buildLayerList();
+  } catch(e) { statusEl.textContent = 'Error: ' + e.message; }
+}
+
+function buildLayerList() {
+  const idx = parseInt(scanSelect.value);
+  layerList.innerHTML = '';
+  if (isNaN(idx) || !scansData[idx]) return;
+  const scan = scansData[idx];
+  // Enable pulp toggle only when this scan has both teeth and pulp layers
+  if (pulpToggleBtn) pulpToggleBtn.disabled = !(scan.layers.includes('toothseg') && scan.layers.includes('pulp'));
+  scan.layers.forEach(l => {
+    const row = document.createElement('label');
+    row.className = 'layer-row';
+    const displayName = LAYER_TITLES[l] || l.replace(/_/g, ' ');
+    // If both segmentator and structures exist, default segmentator to OFF
+    // (they both show bone; only one is needed at a time)
+    const defaultOn = !(l === 'segmentator' && scan.layers.includes('structures'));
+    row.innerHTML = `<input type="checkbox" value="${l}" ${defaultOn ? 'checked' : ''}>
+      <span class="lname">${displayName}</span>
+      <span class="lstatus" id="ls_${l}"></span>`;
+    layerList.appendChild(row);
+  });
+  loadBtn.disabled = false;
+}
+
+// (scan change + clear handled in perio section below to also clear perio state)
+
+loadBtn.addEventListener('click', async () => {
+  const idx = parseInt(scanSelect.value);
+  if (isNaN(idx)) return;
+  const base = scansData[idx].base;
+
+  const allCbs  = [...layerList.querySelectorAll('input[type=checkbox]')];
+  const checked = new Set(allCbs.filter(cb => cb.checked).map(cb => cb.value));
+  if (!checked.size) { statusEl.textContent = 'No layers selected.'; return; }
+
+  // Hide unchecked layers that are already loaded (no re-fetch needed)
+  allCbs.filter(cb => !cb.checked).forEach(cb => {
+    const g = layerGroups[cb.value];
+    if (g) { g.visible = false; const lsEl = document.getElementById(`ls_${cb.value}`); if (lsEl) lsEl.textContent = '○'; }
+  });
+
+  // Show already-loaded layers that are checked
+  [...checked].filter(l => layerGroups[l]).forEach(l => {
+    layerGroups[l].visible = true;
+    const lsEl = document.getElementById(`ls_${l}`);
+    if (lsEl) lsEl.textContent = `${layerGroups[l].children.length}`;
+  });
+
+  // Only fetch layers that are checked but not yet loaded
+  const toLoad = [...checked]
+    .filter(l => !layerGroups[l])
+    .sort((a, b) => {
+      const ai = LAYER_ORDER.indexOf(a), bi = LAYER_ORDER.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+
+  if (!toLoad.length) { statusEl.textContent = 'Layers updated.'; return; }
+
+  loadBtn.disabled = true;
+  loaderEl.classList.add('on');
+  let loaded = 0;
+
+  for (const layer of toLoad) {
+    const lsEl = document.getElementById(`ls_${layer}`);
+    if (lsEl) lsEl.textContent = '…';
+    loaderMsg.textContent = `Loading "${LAYER_TITLES[layer] || layer}"…`;
+
+    try {
+      const r = await fetch(`/api/mesh/${encodeURIComponent(base)}/${encodeURIComponent(layer)}`);
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || r.statusText); }
+      const data = await r.json();
+      addLayer(layer, data);
+      if (lsEl) lsEl.textContent = `${data.meshes.length}`;
+      loaded++;
+    } catch(e) {
+      if (lsEl) lsEl.textContent = '!';
+      statusEl.textContent = `Error on ${layer}: ${e.message}`;
+    }
+  }
+
+  loaderEl.classList.remove('on');
+  loadBtn.disabled = false;
+  statusEl.textContent = loaded ? `Loaded ${loaded} layer(s).` : 'Layers updated.';
+});
+
+// ── Periodontal analysis ──────────────────────────────────────────────────────
+
+const SEVERITY_COLOR = {
+  normal:   0x22CC55,   // green  — bone ≤ 2 mm below CEJ
+  mild:     0xFFCC00,   // yellow — 2–4 mm exposed root
+  moderate: 0xFF8822,   // orange — 4–6 mm
+  severe:   0xFF2828,   // red    — > 6 mm
+};
+const SEVERITY_LABEL = {
+  normal:   'Normal  (≤ 2 mm)',
+  mild:     'Mild  (2–4 mm)',
+  moderate: 'Moderate  (4–6 mm)',
+  severe:   'Severe  (> 6 mm)',
+};
+
+let perióGroup = null;
+
+function clearPerió() {
+  if (perióGroup) { disposeGroup(perióGroup); perióGroup = null; }
+
+  // Remove vertex colours painted on tooth meshes
+  const teethGroup = layerGroups['toothseg'];
+  if (teethGroup) {
+    teethGroup.children.forEach(mesh => {
+      if (!mesh.isMesh) return;
+      mesh.geometry.deleteAttribute('color');
+      mesh.material.vertexColors = false;
+      if (mesh.userData.origColor) {
+        mesh.material.color.copy(mesh.userData.origColor);
+      }
+      mesh.material.needsUpdate = true;
+    });
+  }
+
+  document.getElementById('perióLegend').innerHTML = '';
+  document.getElementById('perióStatus').textContent = '';
+  document.getElementById('perióClearBtn').style.display = 'none';
+}
+
+function addPerióLines(data) {
+  clearPerió();
+  perióGroup = new THREE.Group();   // kept for clearPerió dispose logic
+
+  // ── Teeth must be loaded to paint on ─────────────────────────────────────
+  const teethGroup = layerGroups['toothseg'];
+  if (!teethGroup) {
+    document.getElementById('perióStatus').textContent =
+      'Load the Teeth (FDI) layer first, then analyze.';
+    return;
+  }
+
+  // ── Build FDI → perio lookup ──────────────────────────────────────────────
+  const periByFDI = {};
+  data.teeth.forEach(t => { periByFDI[t.fdi] = t; });
+
+  // Severity colours — rich gum-tissue reds, no yellow stripe
+  const SEV_RGB = {
+    normal:   [0.95, 0.55, 0.52],   // soft coral-pink  — healthy sulcus
+    mild:     [0.93, 0.35, 0.28],   // deep salmon-red  — mild bone loss
+    moderate: [0.88, 0.18, 0.12],   // vivid red        — moderate
+    severe:   [0.82, 0.06, 0.06],   // deep crimson     — severe
+  };
+
+  // Landmark colours (no CEJ stripe — smooth gradient only)
+  const ivR  = 0.957, ivG = 0.941, ivB = 0.922;   // ivory enamel (crown)
+  const dtR  = 0.870, dtG = 0.760, dtB = 0.540;   // root dentin (warm tan)
+
+  const FADE = 3.0;   // mm below bone crest where severity fades to dentin
+
+  // ── Paint severity colour band directly onto each tooth mesh ─────────────
+  teethGroup.children.forEach(mesh => {
+    if (!mesh.isMesh) return;
+
+    // Cache original colour once so clearPerió can restore it
+    if (!mesh.userData.origColor) {
+      mesh.userData.origColor = mesh.material.color.clone();
+    }
+
+    const perio = periByFDI[mesh.userData.label];
+    if (!perio) return;   // tooth not in perio results — leave ivory
+
+    const bpx = perio.bone_point[0], bpy = perio.bone_point[1], bpz = perio.bone_point[2];
+    const axx = perio.long_axis[0],  axy = perio.long_axis[1],  axz = perio.long_axis[2];
+    const sev = SEV_RGB[perio.severity] ?? SEV_RGB.normal;
+
+    // `exposed` = length of exposed root zone (bone crest → CEJ).
+    // For healthy teeth root_exposed_mm ≈ 0 but we still want to show the gum-line
+    // band.  Use at least 35% of the clinical crown height so the pink zone is always
+    // visible — this represents the normal gingival sulcus depth + some margin.
+    const minBand = Math.max(3.0, (perio.crown_length_mm ?? perio.tooth_length_mm * 0.35) * 0.35);
+    const exposed = Math.max(minBand, perio.root_exposed_mm);
+
+    const posAttr = mesh.geometry.getAttribute('position');
+    const count   = posAttr.count;
+    const colBuf  = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      // d = signed distance along long-axis from bone crest
+      //   d > 0  → toward crown (exposed root or enamel)
+      //   d = 0  → bone crest level
+      //   d < 0  → below bone (covered by gum/bone mesh)
+      const d = (posAttr.getX(i) - bpx) * axx
+              + (posAttr.getY(i) - bpy) * axy
+              + (posAttr.getZ(i) - bpz) * axz;
+
+      let r, g, b;
+
+      // Distance from CEJ (exposed = distance bone-crest → CEJ)
+      // distCEJ > 0 means above CEJ (crown), < 0 means below CEJ (root zone)
+      const distCEJ = d - exposed;
+
+      if (distCEJ > 0) {
+        // ── Crown (above CEJ): pure ivory — no tinting at all ────────────
+        r = ivR; g = ivG; b = ivB;
+
+      } else if (d > 0) {
+        // ── Exposed root (CEJ → bone crest): vivid severity gradient ──────
+        const t = 1.0 - (d / Math.max(exposed, 0.5));  // 0 near CEJ → 1 at crest
+        const lpR = 0.97, lpG = 0.83, lpB = 0.81;      // light blush near CEJ
+        r = lpR + t * (sev[0] - lpR);
+        g = lpG + t * (sev[1] - lpG);
+        b = lpB + t * (sev[2] - lpB);
+
+      } else if (d > -FADE) {
+        // ── Below bone crest: severity colour fades to root dentin ────────
+        const t = -d / FADE;
+        r = sev[0] + t * (dtR - sev[0]);
+        g = sev[1] + t * (dtG - sev[1]);
+        b = sev[2] + t * (dtB - sev[2]);
+
+      } else {
+        // ── Deep root (under bone): pure dentin ───────────────────────────
+        r = dtR; g = dtG; b = dtB;
+      }
+
+      colBuf[i * 3]     = r;
+      colBuf[i * 3 + 1] = g;
+      colBuf[i * 3 + 2] = b;
+    }
+
+    mesh.geometry.setAttribute('color', new THREE.BufferAttribute(colBuf, 3));
+    mesh.material.vertexColors = true;
+    mesh.material.color.set(0xffffff);   // vertex colours carry the hue; white = no tint
+    mesh.material.needsUpdate = true;
+  });
+
+  scene.add(perióGroup);
+
+  // ── Sidebar legend & summary ──────────────────────────────────────────────
+  const legEl = document.getElementById('perióLegend');
+  legEl.innerHTML = '';
+  for (const [sev, label] of Object.entries(SEVERITY_LABEL)) {
+    const cnt = data.summary[sev] ?? 0;
+    if (cnt === 0) continue;
+    const row = document.createElement('div');
+    row.className = 'perio-row';
+    row.innerHTML =
+      `<div class="perio-dot" style="background:#${SEVERITY_COLOR[sev].toString(16).padStart(6,'0')}"></div>` +
+      `<span>${label}</span><span class="perio-count">${cnt}</span>`;
+    legEl.appendChild(row);
+  }
+
+  const total    = data.teeth.length;
+  const affected = total - (data.summary.normal ?? 0);
+  document.getElementById('perióStatus').textContent =
+    `${total} teeth analysed · ${affected} with bone loss`;
+  document.getElementById('perióClearBtn').style.display = '';
+}
+
+// ── Show-Pulp toggle ─────────────────────────────────────────────────────────
+const pulpToggleBtn = document.getElementById('pulpToggleBtn');
+let   pulpModeOn    = false;
+
+/** Switch teeth to transparent / opaque and show / hide the pulp layer. */
+function setPulpMode(on) {
+  pulpModeOn = on;
+
+  // Update every tooth mesh material
+  const teethGroup = layerGroups['toothseg'];
+  if (teethGroup) {
+    teethGroup.traverse(o => {
+      if (!o.isMesh) return;
+      if (on) {
+        o.material.opacity     = 0.22;   // near-invisible shell — pulp shines through
+        o.material.transparent = true;
+        o.material.depthWrite  = false;
+      } else {
+        o.material.opacity     = 1.0;
+        o.material.transparent = false;
+        o.material.depthWrite  = true;
+      }
+      o.material.needsUpdate = true;
+    });
+  }
+
+  // Show / hide pulp group
+  const pulpGroup = layerGroups['pulp'];
+  if (pulpGroup) pulpGroup.visible = on;
+
+  pulpToggleBtn.textContent = on ? 'Hide Pulp' : 'Show Pulp';
+  pulpToggleBtn.classList.toggle('btn-active', on);
+  pulpToggleBtn.classList.toggle('btn-ghost',  !on);
+}
+
+pulpToggleBtn.addEventListener('click', async () => {
+  const wantOn = !pulpModeOn;
+
+  if (wantOn && !layerGroups['pulp']) {
+    // Pulp not loaded yet — fetch it now
+    const idx = parseInt(scanSelect.value);
+    if (isNaN(idx)) return;
+    const scan = scansData[idx];
+    if (!scan || !scan.layers.includes('pulp')) {
+      statusEl.textContent = 'No pulp layer available for this scan.';
+      return;
+    }
+    pulpToggleBtn.disabled = true;
+    loaderEl.classList.add('on');
+    loaderMsg.textContent  = 'Loading Dental Pulp…';
+    try {
+      const r = await fetch(`/api/mesh/${encodeURIComponent(scan.base)}/pulp`);
+      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || r.statusText); }
+      const data = await r.json();
+      addLayer('pulp', data);
+      // addLayer makes it visible by default — hide until we setPulpMode(true)
+      layerGroups['pulp'].visible = false;
+    } catch(e) {
+      statusEl.textContent = 'Pulp load error: ' + e.message;
+      loaderEl.classList.remove('on');
+      pulpToggleBtn.disabled = false;
+      return;
+    }
+    loaderEl.classList.remove('on');
+    pulpToggleBtn.disabled = false;
+  }
+
+  setPulpMode(wantOn);
+});
+
+const perióBtn      = document.getElementById('perióBtn');
+const perióClearBtn = document.getElementById('perióClearBtn');
+
+perióBtn.addEventListener('click', async () => {
+  const idx = parseInt(scanSelect.value);
+  if (isNaN(idx)) return;
+  const base = scansData[idx].base;
+
+  perióBtn.disabled = true;
+  document.getElementById('perióStatus').textContent = 'Computing bone levels…';
+
+  try {
+    const r = await fetch(`/api/perio/${encodeURIComponent(base)}`);
+    if (!r.ok) {
+      const e = await r.json();
+      throw new Error(e.detail || r.statusText);
+    }
+    const data = await r.json();
+    addPerióLines(data);
+  } catch(e) {
+    document.getElementById('perióStatus').textContent = 'Error: ' + e.message;
+  } finally {
+    perióBtn.disabled = false;
+  }
+});
+
+perióClearBtn.addEventListener('click', clearPerió);
+
+// Enable perio button once a scan is selected
+scanSelect.addEventListener('change', () => {
+  clearAll(); clearPerió(); buildLayerList();
+  const idx = parseInt(scanSelect.value);
+  if (!isNaN(idx) && scansData[idx]) loadSliceInfo(scansData[idx].base);
+});
+clearBtn.addEventListener('click', () => { clearAll(); clearPerió(); statusEl.textContent = 'Scene cleared.'; });
+
+
+// ── 2D CBCT Slice Viewer ─────────────────────────────────────────────────────
+const AXES = ['axial', 'coronal', 'sagittal'];
+const slicePanel = document.getElementById('slicePanel');
+const sliceState = {};
+AXES.forEach(ax => {
+  sliceState[ax] = {
+    canvas:  document.getElementById(ax + 'Canvas'),
+    slider:  document.getElementById(ax + 'Slider'),
+    idxEl:   document.getElementById(ax + 'Idx'),
+    current: -1,
+  };
+});
+
+let _sliceBase      = null;
+let _sliceImgCache  = {};   // "axis/index" → ImageBitmap
+
+function _drawSlice(ax, bmp) {
+  const c = sliceState[ax].canvas;
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+}
+
+async function _fetchSlice(base, ax, idx) {
+  const key = `${ax}/${idx}`;
+  if (_sliceImgCache[key]) { _drawSlice(ax, _sliceImgCache[key]); return; }
+  try {
+    const r = await fetch(`/api/slice/${encodeURIComponent(base)}/${ax}/${idx}`);
+    if (!r.ok) return;
+    const bmp = await createImageBitmap(await r.blob());
+    _sliceImgCache[key] = bmp;
+    if (_sliceBase === base) _drawSlice(ax, bmp);
+  } catch(_) {}
+}
+
+const PANEL_W = 188;   // canvas display width in px (matches .sv-canvas CSS width)
+
+async function loadSliceInfo(base) {
+  _sliceBase = null;
+  _sliceImgCache = {};
+  slicePanel.classList.add('hidden');
+  try {
+    const r = await fetch(`/api/sliceinfo/${encodeURIComponent(base)}`);
+    if (!r.ok) return;
+    const { shape, axis_order, slice_sizes } = await r.json();
+    _sliceBase = base;
+    document.getElementById('spHint').textContent = `${shape[0]}×${shape[1]}×${shape[2]}`;
+    AXES.forEach(ax => {
+      const n   = shape[axis_order[ax]];
+      const mid = Math.floor(n / 2);
+      const s   = sliceState[ax];
+
+      // Set canvas pixel buffer to match the actual PNG dimensions (post-transpose)
+      const sz = slice_sizes[ax];
+      s.canvas.width  = sz.w;
+      s.canvas.height = sz.h;
+      // Scale canvas CSS height to preserve aspect ratio within the fixed panel width
+      const cssH = Math.round(PANEL_W * sz.h / sz.w);
+      s.canvas.style.width  = PANEL_W + 'px';
+      s.canvas.style.height = cssH + 'px';
+
+      s.slider.max = n - 1;  s.slider.value = mid;
+      s.idxEl.textContent = `${mid} / ${n - 1}`;
+      s.current = mid;
+      _fetchSlice(base, ax, mid);
+    });
+    slicePanel.classList.remove('hidden');
+  } catch(_) {}
+}
+
+AXES.forEach(ax => {
+  sliceState[ax].slider.addEventListener('input', () => {
+    if (!_sliceBase) return;
+    const idx = parseInt(sliceState[ax].slider.value);
+    const n   = parseInt(sliceState[ax].slider.max) + 1;
+    sliceState[ax].idxEl.textContent = `${idx} / ${n - 1}`;
+    if (sliceState[ax].current === idx) return;
+    sliceState[ax].current = idx;
+    _fetchSlice(_sliceBase, ax, idx);
+  });
+});
+
+fetchScans().then(() => {
+  const idx = parseInt(scanSelect.value);
+  if (!isNaN(idx) && scansData[idx]) loadSliceInfo(scansData[idx].base);
+});
+
+// ── Crown Generator ───────────────────────────────────────────────────────────
+const crownToothSelect = document.getElementById('crownToothSelect');
+const crownOffset      = document.getElementById('crownOffset');
+const crownOffsetVal   = document.getElementById('crownOffsetVal');
+const crownSmooth      = document.getElementById('crownSmooth');
+const crownSmoothVal   = document.getElementById('crownSmoothVal');
+const crownGenBtn      = document.getElementById('crownGenBtn');
+const crownViewBtn     = document.getElementById('crownViewBtn');
+const crownDlBtn       = document.getElementById('crownDlBtn');
+const crownStatus      = document.getElementById('crownStatus');
+
+const SMOOTH_LEVELS = [
+  { label: 'Max detail', sigma: 0.5, taubin: 3  },
+  { label: 'Balanced',   sigma: 0.8, taubin: 7  },
+  { label: 'Smooth',     sigma: 1.2, taubin: 12 },
+];
+
+crownOffset.addEventListener('input', () => {
+  crownOffsetVal.textContent = parseFloat(crownOffset.value).toFixed(1) + ' mm';
+});
+crownSmooth.addEventListener('input', () => {
+  crownSmoothVal.textContent = SMOOTH_LEVELS[parseInt(crownSmooth.value)].label;
+});
+
+// Populate crown tooth dropdown whenever toothseg loads
+function _refreshCrownSelect() {
+  const tg = layerGroups['toothseg'];
+  crownToothSelect.innerHTML = '';
+  if (!tg || !tg.children.length) {
+    crownToothSelect.innerHTML = '<option value="">— load teeth first —</option>';
+    crownGenBtn.disabled = true;
+    return;
+  }
+  const labels = [...tg.children]
+    .filter(o => o.isMesh)
+    .map(o => o.userData.label)
+    .sort((a, b) => a - b);
+  labels.forEach(lbl => {
+    const o = document.createElement('option');
+    o.value = lbl;
+    o.textContent = `${lbl}  ${FDI_NAMES[lbl] || 'Tooth ' + lbl}`;
+    crownToothSelect.appendChild(o);
+  });
+  crownGenBtn.disabled = false;
+}
+
+let _crownGeo  = null;
+let _crownName = '';
+let _crownMesh = null;
+
+crownGenBtn.addEventListener('click', async () => {
+  const lbl = parseInt(crownToothSelect.value);
+  if (!lbl) return;
+
+  const idx = parseInt(scanSelect.value);
+  if (isNaN(idx)) return;
+  const base = scansData[idx].base;
+
+  const sl     = SMOOTH_LEVELS[parseInt(crownSmooth.value)];
+  const offset = parseFloat(crownOffset.value);
+
+  crownGenBtn.disabled = true;
+  crownStatus.textContent = `Generating crown for tooth ${lbl}…`;
+  crownViewBtn.style.display = 'none';
+  crownDlBtn.style.display   = 'none';
+
+  try {
+    const url = `/api/crown/${encodeURIComponent(base)}/${lbl}`
+              + `?offset_mm=${offset}&sigma=${sl.sigma}&taubin=${sl.taubin}`;
+    const r = await fetch(url);
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || r.statusText); }
+    const data = await r.json();
+
+    // Build Three.js geometry
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(data.vertices), 3));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(data.faces), 1));
+    geo.computeVertexNormals();
+
+    // Replace previous crown mesh
+    if (_crownMesh) { scene.remove(_crownMesh); _crownMesh.geometry.dispose(); _crownMesh.material.dispose(); }
+    const mat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color().setHex(0xF5F0E8, THREE.SRGBColorSpace),
+      roughness: 0.18, metalness: 0.0,
+      transparent: true, opacity: 0.72, depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    _crownMesh = new THREE.Mesh(geo, mat);
+    _crownMesh.renderOrder = 10;
+    scene.add(_crownMesh);
+
+    _crownGeo  = geo;
+    _crownName = `crown_${lbl}_${offset}mm`;
+
+    const nTri = data.faces.length / 3;
+    const nVert = data.vertices.length / 3;
+    crownStatus.textContent =
+      `✓ Tooth ${lbl} · ${offset} mm offset · ${nVert.toLocaleString()} verts · ${nTri.toLocaleString()} tris`;
+    crownViewBtn.style.display = '';
+    crownDlBtn.style.display   = '';
+
+  } catch(e) {
+    crownStatus.textContent = 'Error: ' + e.message;
+  } finally {
+    crownGenBtn.disabled = false;
+  }
+});
+
+crownViewBtn.addEventListener('click', () => {
+  if (_crownGeo) openSTLPreview(_crownGeo, _crownName, new THREE.Color(0xF5F0E8));
+});
+crownDlBtn.addEventListener('click', () => {
+  if (_crownGeo) _geometryToSTL(_crownGeo, `${_crownName}.stl`);
+});
+
+</script>
+</body>
+</html>

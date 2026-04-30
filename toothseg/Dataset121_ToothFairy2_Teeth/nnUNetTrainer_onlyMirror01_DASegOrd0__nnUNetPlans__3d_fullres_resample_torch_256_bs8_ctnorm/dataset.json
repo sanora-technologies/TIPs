@@ -1,0 +1,2932 @@
+{
+    "name": "Dataset121_ToothFairy2_Teeth",
+    "description": "Segmentation of maxillofacial CBCT volumes",
+    "reference": "https://ditto.ing.unimore.it/toothfairy2/",
+    "license": "CC-BY-SA 4.0",
+    "release": "20/04/2024",
+    "latestUpdate": "07/07/2024",
+    "tensorImageSize": "4D",
+    "labels": {
+        "background": 0,
+        "Upper Right Central Incisor": 1,
+        "Upper Right Lateral Incisor": 2,
+        "Upper Right Canine": 3,
+        "Upper Right First Premolar": 4,
+        "Upper Right Second Premolar": 5,
+        "Upper Right First Molar": 6,
+        "Upper Right Second Molar": 7,
+        "Upper Right Third Molar (Wisdom Tooth)": 8,
+        "Upper Left Central Incisor": 9,
+        "Upper Left Lateral Incisor": 10,
+        "Upper Left Canine": 11,
+        "Upper Left First Premolar": 12,
+        "Upper Left Second Premolar": 13,
+        "Upper Left First Molar": 14,
+        "Upper Left Second Molar": 15,
+        "Upper Left Third Molar (Wisdom Tooth)": 16,
+        "Lower Left Central Incisor": 17,
+        "Lower Left Lateral Incisor": 18,
+        "Lower Left Canine": 19,
+        "Lower Left First Premolar": 20,
+        "Lower Left Second Premolar": 21,
+        "Lower Left First Molar": 22,
+        "Lower Left Second Molar": 23,
+        "Lower Left Third Molar (Wisdom Tooth)": 24,
+        "Lower Right Central Incisor": 25,
+        "Lower Right Lateral Incisor": 26,
+        "Lower Right Canine": 27,
+        "Lower Right First Premolar": 28,
+        "Lower Right Second Premolar": 29,
+        "Lower Right First Molar": 30,
+        "Lower Right Second Molar": 31,
+        "Lower Right Third Molar (Wisdom Tooth)": 32
+    },
+    "numTraining": 480,
+    "numTest": 0,
+    "file_ending": ".nii.gz",
+    "channel_names": {
+        "0": "CBCT"
+    },
+    "dataset": {
+        "ToothFairy2P_328": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_328_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_328.nii.gz"
+        },
+        "ToothFairy2P_404": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_404_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_404.nii.gz"
+        },
+        "ToothFairy2P_518": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_518_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_518.nii.gz"
+        },
+        "ToothFairy2P_488": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_488_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_488.nii.gz"
+        },
+        "ToothFairy2P_508": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_508_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_508.nii.gz"
+        },
+        "ToothFairy2P_379": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_379_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_379.nii.gz"
+        },
+        "ToothFairy2P_126": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_126_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_126.nii.gz"
+        },
+        "ToothFairy2P_323": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_323_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_323.nii.gz"
+        },
+        "ToothFairy2P_506": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_506_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_506.nii.gz"
+        },
+        "ToothFairy2P_453": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_453_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_453.nii.gz"
+        },
+        "ToothFairy2P_439": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_439_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_439.nii.gz"
+        },
+        "ToothFairy2P_335": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_335_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_335.nii.gz"
+        },
+        "ToothFairy2P_474": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_474_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_474.nii.gz"
+        },
+        "ToothFairy2P_329": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_329_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_329.nii.gz"
+        },
+        "ToothFairy2P_197": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_197_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_197.nii.gz"
+        },
+        "ToothFairy2P_416": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_416_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_416.nii.gz"
+        },
+        "ToothFairy2P_423": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_423_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_423.nii.gz"
+        },
+        "ToothFairy2F_001": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_001_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_001.nii.gz"
+        },
+        "ToothFairy2P_343": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_343_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_343.nii.gz"
+        },
+        "ToothFairy2P_426": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_426_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_426.nii.gz"
+        },
+        "ToothFairy2P_535": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_535_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_535.nii.gz"
+        },
+        "ToothFairy2P_450": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_450_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_450.nii.gz"
+        },
+        "ToothFairy2F_015": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_015_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_015.nii.gz"
+        },
+        "ToothFairy2F_006": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_006_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_006.nii.gz"
+        },
+        "ToothFairy2P_509": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_509_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_509.nii.gz"
+        },
+        "ToothFairy2P_124": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_124_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_124.nii.gz"
+        },
+        "ToothFairy2P_408": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_408_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_408.nii.gz"
+        },
+        "ToothFairy2P_230": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_230_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_230.nii.gz"
+        },
+        "ToothFairy2P_070": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_070_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_070.nii.gz"
+        },
+        "ToothFairy2P_401": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_401_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_401.nii.gz"
+        },
+        "ToothFairy2P_411": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_411_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_411.nii.gz"
+        },
+        "ToothFairy2P_438": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_438_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_438.nii.gz"
+        },
+        "ToothFairy2P_481": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_481_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_481.nii.gz"
+        },
+        "ToothFairy2F_024": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_024_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_024.nii.gz"
+        },
+        "ToothFairy2P_004": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_004_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_004.nii.gz"
+        },
+        "ToothFairy2P_237": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_237_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_237.nii.gz"
+        },
+        "ToothFairy2P_340": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_340_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_340.nii.gz"
+        },
+        "ToothFairy2P_245": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_245_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_245.nii.gz"
+        },
+        "ToothFairy2P_398": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_398_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_398.nii.gz"
+        },
+        "ToothFairy2P_110": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_110_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_110.nii.gz"
+        },
+        "ToothFairy2P_007": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_007_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_007.nii.gz"
+        },
+        "ToothFairy2P_466": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_466_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_466.nii.gz"
+        },
+        "ToothFairy2P_359": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_359_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_359.nii.gz"
+        },
+        "ToothFairy2P_025": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_025_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_025.nii.gz"
+        },
+        "ToothFairy2P_339": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_339_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_339.nii.gz"
+        },
+        "ToothFairy2P_098": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_098_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_098.nii.gz"
+        },
+        "ToothFairy2P_458": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_458_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_458.nii.gz"
+        },
+        "ToothFairy2P_500": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_500_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_500.nii.gz"
+        },
+        "ToothFairy2P_548": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_548_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_548.nii.gz"
+        },
+        "ToothFairy2P_056": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_056_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_056.nii.gz"
+        },
+        "ToothFairy2P_462": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_462_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_462.nii.gz"
+        },
+        "ToothFairy2P_239": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_239_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_239.nii.gz"
+        },
+        "ToothFairy2P_368": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_368_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_368.nii.gz"
+        },
+        "ToothFairy2P_349": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_349_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_349.nii.gz"
+        },
+        "ToothFairy2P_380": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_380_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_380.nii.gz"
+        },
+        "ToothFairy2F_033": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_033_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_033.nii.gz"
+        },
+        "ToothFairy2F_009": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_009_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_009.nii.gz"
+        },
+        "ToothFairy2P_497": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_497_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_497.nii.gz"
+        },
+        "ToothFairy2P_494": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_494_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_494.nii.gz"
+        },
+        "ToothFairy2P_356": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_356_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_356.nii.gz"
+        },
+        "ToothFairy2P_415": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_415_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_415.nii.gz"
+        },
+        "ToothFairy2P_202": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_202_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_202.nii.gz"
+        },
+        "ToothFairy2P_097": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_097_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_097.nii.gz"
+        },
+        "ToothFairy2P_148": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_148_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_148.nii.gz"
+        },
+        "ToothFairy2F_067": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_067_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_067.nii.gz"
+        },
+        "ToothFairy2F_064": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_064_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_064.nii.gz"
+        },
+        "ToothFairy2P_399": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_399_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_399.nii.gz"
+        },
+        "ToothFairy2P_140": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_140_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_140.nii.gz"
+        },
+        "ToothFairy2F_032": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_032_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_032.nii.gz"
+        },
+        "ToothFairy2P_410": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_410_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_410.nii.gz"
+        },
+        "ToothFairy2P_190": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_190_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_190.nii.gz"
+        },
+        "ToothFairy2P_021": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_021_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_021.nii.gz"
+        },
+        "ToothFairy2P_382": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_382_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_382.nii.gz"
+        },
+        "ToothFairy2P_366": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_366_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_366.nii.gz"
+        },
+        "ToothFairy2P_125": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_125_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_125.nii.gz"
+        },
+        "ToothFairy2P_246": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_246_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_246.nii.gz"
+        },
+        "ToothFairy2P_361": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_361_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_361.nii.gz"
+        },
+        "ToothFairy2P_022": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_022_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_022.nii.gz"
+        },
+        "ToothFairy2P_195": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_195_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_195.nii.gz"
+        },
+        "ToothFairy2P_390": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_390_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_390.nii.gz"
+        },
+        "ToothFairy2F_059": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_059_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_059.nii.gz"
+        },
+        "ToothFairy2F_037": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_037_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_037.nii.gz"
+        },
+        "ToothFairy2P_116": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_116_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_116.nii.gz"
+        },
+        "ToothFairy2P_201": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_201_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_201.nii.gz"
+        },
+        "ToothFairy2P_077": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_077_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_077.nii.gz"
+        },
+        "ToothFairy2F_044": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_044_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_044.nii.gz"
+        },
+        "ToothFairy2P_048": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_048_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_048.nii.gz"
+        },
+        "ToothFairy2P_333": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_333_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_333.nii.gz"
+        },
+        "ToothFairy2P_146": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_146_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_146.nii.gz"
+        },
+        "ToothFairy2P_229": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_229_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_229.nii.gz"
+        },
+        "ToothFairy2P_397": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_397_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_397.nii.gz"
+        },
+        "ToothFairy2P_538": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_538_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_538.nii.gz"
+        },
+        "ToothFairy2P_096": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_096_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_096.nii.gz"
+        },
+        "ToothFairy2P_413": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_413_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_413.nii.gz"
+        },
+        "ToothFairy2P_235": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_235_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_235.nii.gz"
+        },
+        "ToothFairy2P_510": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_510_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_510.nii.gz"
+        },
+        "ToothFairy2P_425": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_425_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_425.nii.gz"
+        },
+        "ToothFairy2P_216": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_216_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_216.nii.gz"
+        },
+        "ToothFairy2P_209": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_209_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_209.nii.gz"
+        },
+        "ToothFairy2P_348": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_348_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_348.nii.gz"
+        },
+        "ToothFairy2P_003": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_003_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_003.nii.gz"
+        },
+        "ToothFairy2P_139": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_139_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_139.nii.gz"
+        },
+        "ToothFairy2P_103": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_103_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_103.nii.gz"
+        },
+        "ToothFairy2P_228": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_228_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_228.nii.gz"
+        },
+        "ToothFairy2P_492": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_492_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_492.nii.gz"
+        },
+        "ToothFairy2P_330": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_330_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_330.nii.gz"
+        },
+        "ToothFairy2F_057": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_057_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_057.nii.gz"
+        },
+        "ToothFairy2P_479": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_479_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_479.nii.gz"
+        },
+        "ToothFairy2P_534": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_534_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_534.nii.gz"
+        },
+        "ToothFairy2P_217": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_217_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_217.nii.gz"
+        },
+        "ToothFairy2P_136": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_136_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_136.nii.gz"
+        },
+        "ToothFairy2P_432": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_432_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_432.nii.gz"
+        },
+        "ToothFairy2F_055": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_055_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_055.nii.gz"
+        },
+        "ToothFairy2P_414": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_414_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_414.nii.gz"
+        },
+        "ToothFairy2P_059": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_059_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_059.nii.gz"
+        },
+        "ToothFairy2P_440": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_440_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_440.nii.gz"
+        },
+        "ToothFairy2P_365": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_365_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_365.nii.gz"
+        },
+        "ToothFairy2P_037": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_037_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_037.nii.gz"
+        },
+        "ToothFairy2P_477": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_477_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_477.nii.gz"
+        },
+        "ToothFairy2P_213": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_213_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_213.nii.gz"
+        },
+        "ToothFairy2P_127": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_127_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_127.nii.gz"
+        },
+        "ToothFairy2P_360": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_360_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_360.nii.gz"
+        },
+        "ToothFairy2P_512": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_512_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_512.nii.gz"
+        },
+        "ToothFairy2P_460": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_460_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_460.nii.gz"
+        },
+        "ToothFairy2P_357": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_357_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_357.nii.gz"
+        },
+        "ToothFairy2P_325": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_325_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_325.nii.gz"
+        },
+        "ToothFairy2P_529": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_529_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_529.nii.gz"
+        },
+        "ToothFairy2F_022": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_022_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_022.nii.gz"
+        },
+        "ToothFairy2F_040": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_040_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_040.nii.gz"
+        },
+        "ToothFairy2F_028": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_028_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_028.nii.gz"
+        },
+        "ToothFairy2F_054": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_054_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_054.nii.gz"
+        },
+        "ToothFairy2P_236": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_236_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_236.nii.gz"
+        },
+        "ToothFairy2P_519": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_519_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_519.nii.gz"
+        },
+        "ToothFairy2P_372": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_372_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_372.nii.gz"
+        },
+        "ToothFairy2P_468": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_468_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_468.nii.gz"
+        },
+        "ToothFairy2P_206": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_206_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_206.nii.gz"
+        },
+        "ToothFairy2P_131": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_131_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_131.nii.gz"
+        },
+        "ToothFairy2P_388": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_388_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_388.nii.gz"
+        },
+        "ToothFairy2P_099": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_099_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_099.nii.gz"
+        },
+        "ToothFairy2P_210": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_210_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_210.nii.gz"
+        },
+        "ToothFairy2P_445": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_445_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_445.nii.gz"
+        },
+        "ToothFairy2P_029": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_029_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_029.nii.gz"
+        },
+        "ToothFairy2P_051": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_051_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_051.nii.gz"
+        },
+        "ToothFairy2P_102": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_102_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_102.nii.gz"
+        },
+        "ToothFairy2F_047": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_047_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_047.nii.gz"
+        },
+        "ToothFairy2P_255": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_255_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_255.nii.gz"
+        },
+        "ToothFairy2P_480": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_480_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_480.nii.gz"
+        },
+        "ToothFairy2F_016": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_016_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_016.nii.gz"
+        },
+        "ToothFairy2P_324": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_324_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_324.nii.gz"
+        },
+        "ToothFairy2P_067": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_067_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_067.nii.gz"
+        },
+        "ToothFairy2P_427": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_427_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_427.nii.gz"
+        },
+        "ToothFairy2F_065": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_065_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_065.nii.gz"
+        },
+        "ToothFairy2P_389": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_389_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_389.nii.gz"
+        },
+        "ToothFairy2F_029": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_029_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_029.nii.gz"
+        },
+        "ToothFairy2F_050": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_050_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_050.nii.gz"
+        },
+        "ToothFairy2P_421": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_421_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_421.nii.gz"
+        },
+        "ToothFairy2P_400": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_400_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_400.nii.gz"
+        },
+        "ToothFairy2P_012": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_012_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_012.nii.gz"
+        },
+        "ToothFairy2P_130": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_130_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_130.nii.gz"
+        },
+        "ToothFairy2P_448": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_448_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_448.nii.gz"
+        },
+        "ToothFairy2P_455": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_455_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_455.nii.gz"
+        },
+        "ToothFairy2P_086": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_086_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_086.nii.gz"
+        },
+        "ToothFairy2P_152": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_152_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_152.nii.gz"
+        },
+        "ToothFairy2F_048": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_048_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_048.nii.gz"
+        },
+        "ToothFairy2F_013": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_013_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_013.nii.gz"
+        },
+        "ToothFairy2F_056": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_056_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_056.nii.gz"
+        },
+        "ToothFairy2P_407": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_407_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_407.nii.gz"
+        },
+        "ToothFairy2P_436": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_436_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_436.nii.gz"
+        },
+        "ToothFairy2F_025": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_025_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_025.nii.gz"
+        },
+        "ToothFairy2P_031": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_031_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_031.nii.gz"
+        },
+        "ToothFairy2F_041": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_041_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_041.nii.gz"
+        },
+        "ToothFairy2P_080": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_080_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_080.nii.gz"
+        },
+        "ToothFairy2P_342": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_342_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_342.nii.gz"
+        },
+        "ToothFairy2P_463": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_463_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_463.nii.gz"
+        },
+        "ToothFairy2P_322": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_322_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_322.nii.gz"
+        },
+        "ToothFairy2P_208": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_208_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_208.nii.gz"
+        },
+        "ToothFairy2P_262": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_262_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_262.nii.gz"
+        },
+        "ToothFairy2P_141": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_141_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_141.nii.gz"
+        },
+        "ToothFairy2F_023": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_023_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_023.nii.gz"
+        },
+        "ToothFairy2P_358": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_358_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_358.nii.gz"
+        },
+        "ToothFairy2P_526": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_526_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_526.nii.gz"
+        },
+        "ToothFairy2P_129": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_129_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_129.nii.gz"
+        },
+        "ToothFairy2P_151": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_151_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_151.nii.gz"
+        },
+        "ToothFairy2P_449": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_449_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_449.nii.gz"
+        },
+        "ToothFairy2P_505": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_505_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_505.nii.gz"
+        },
+        "ToothFairy2P_039": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_039_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_039.nii.gz"
+        },
+        "ToothFairy2P_040": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_040_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_040.nii.gz"
+        },
+        "ToothFairy2P_386": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_386_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_386.nii.gz"
+        },
+        "ToothFairy2P_013": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_013_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_013.nii.gz"
+        },
+        "ToothFairy2P_033": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_033_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_033.nii.gz"
+        },
+        "ToothFairy2F_045": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_045_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_045.nii.gz"
+        },
+        "ToothFairy2P_502": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_502_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_502.nii.gz"
+        },
+        "ToothFairy2P_082": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_082_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_082.nii.gz"
+        },
+        "ToothFairy2P_065": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_065_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_065.nii.gz"
+        },
+        "ToothFairy2P_132": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_132_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_132.nii.gz"
+        },
+        "ToothFairy2P_263": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_263_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_263.nii.gz"
+        },
+        "ToothFairy2P_403": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_403_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_403.nii.gz"
+        },
+        "ToothFairy2F_039": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_039_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_039.nii.gz"
+        },
+        "ToothFairy2P_402": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_402_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_402.nii.gz"
+        },
+        "ToothFairy2P_261": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_261_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_261.nii.gz"
+        },
+        "ToothFairy2P_371": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_371_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_371.nii.gz"
+        },
+        "ToothFairy2P_093": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_093_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_093.nii.gz"
+        },
+        "ToothFairy2P_017": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_017_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_017.nii.gz"
+        },
+        "ToothFairy2P_047": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_047_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_047.nii.gz"
+        },
+        "ToothFairy2P_105": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_105_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_105.nii.gz"
+        },
+        "ToothFairy2P_544": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_544_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_544.nii.gz"
+        },
+        "ToothFairy2P_514": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_514_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_514.nii.gz"
+        },
+        "ToothFairy2F_046": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_046_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_046.nii.gz"
+        },
+        "ToothFairy2P_030": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_030_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_030.nii.gz"
+        },
+        "ToothFairy2P_104": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_104_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_104.nii.gz"
+        },
+        "ToothFairy2P_027": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_027_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_027.nii.gz"
+        },
+        "ToothFairy2P_527": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_527_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_527.nii.gz"
+        },
+        "ToothFairy2P_071": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_071_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_071.nii.gz"
+        },
+        "ToothFairy2P_264": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_264_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_264.nii.gz"
+        },
+        "ToothFairy2P_491": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_491_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_491.nii.gz"
+        },
+        "ToothFairy2F_062": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_062_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_062.nii.gz"
+        },
+        "ToothFairy2P_381": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_381_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_381.nii.gz"
+        },
+        "ToothFairy2P_351": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_351_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_351.nii.gz"
+        },
+        "ToothFairy2P_142": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_142_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_142.nii.gz"
+        },
+        "ToothFairy2P_482": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_482_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_482.nii.gz"
+        },
+        "ToothFairy2P_006": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_006_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_006.nii.gz"
+        },
+        "ToothFairy2P_424": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_424_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_424.nii.gz"
+        },
+        "ToothFairy2P_355": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_355_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_355.nii.gz"
+        },
+        "ToothFairy2P_370": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_370_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_370.nii.gz"
+        },
+        "ToothFairy2P_337": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_337_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_337.nii.gz"
+        },
+        "ToothFairy2P_472": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_472_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_472.nii.gz"
+        },
+        "ToothFairy2P_106": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_106_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_106.nii.gz"
+        },
+        "ToothFairy2P_011": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_011_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_011.nii.gz"
+        },
+        "ToothFairy2P_137": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_137_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_137.nii.gz"
+        },
+        "ToothFairy2P_241": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_241_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_241.nii.gz"
+        },
+        "ToothFairy2P_199": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_199_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_199.nii.gz"
+        },
+        "ToothFairy2P_233": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_233_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_233.nii.gz"
+        },
+        "ToothFairy2P_446": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_446_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_446.nii.gz"
+        },
+        "ToothFairy2P_026": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_026_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_026.nii.gz"
+        },
+        "ToothFairy2P_055": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_055_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_055.nii.gz"
+        },
+        "ToothFairy2P_049": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_049_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_049.nii.gz"
+        },
+        "ToothFairy2P_431": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_431_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_431.nii.gz"
+        },
+        "ToothFairy2P_516": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_516_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_516.nii.gz"
+        },
+        "ToothFairy2P_478": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_478_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_478.nii.gz"
+        },
+        "ToothFairy2F_027": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_027_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_027.nii.gz"
+        },
+        "ToothFairy2P_234": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_234_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_234.nii.gz"
+        },
+        "ToothFairy2F_030": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_030_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_030.nii.gz"
+        },
+        "ToothFairy2P_205": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_205_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_205.nii.gz"
+        },
+        "ToothFairy2P_115": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_115_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_115.nii.gz"
+        },
+        "ToothFairy2P_395": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_395_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_395.nii.gz"
+        },
+        "ToothFairy2P_088": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_088_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_088.nii.gz"
+        },
+        "ToothFairy2P_433": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_433_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_433.nii.gz"
+        },
+        "ToothFairy2P_428": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_428_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_428.nii.gz"
+        },
+        "ToothFairy2P_083": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_083_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_083.nii.gz"
+        },
+        "ToothFairy2P_354": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_354_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_354.nii.gz"
+        },
+        "ToothFairy2P_470": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_470_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_470.nii.gz"
+        },
+        "ToothFairy2P_487": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_487_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_487.nii.gz"
+        },
+        "ToothFairy2P_018": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_018_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_018.nii.gz"
+        },
+        "ToothFairy2F_036": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_036_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_036.nii.gz"
+        },
+        "ToothFairy2F_007": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_007_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_007.nii.gz"
+        },
+        "ToothFairy2P_252": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_252_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_252.nii.gz"
+        },
+        "ToothFairy2P_250": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_250_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_250.nii.gz"
+        },
+        "ToothFairy2P_015": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_015_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_015.nii.gz"
+        },
+        "ToothFairy2P_367": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_367_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_367.nii.gz"
+        },
+        "ToothFairy2P_087": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_087_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_087.nii.gz"
+        },
+        "ToothFairy2P_451": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_451_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_451.nii.gz"
+        },
+        "ToothFairy2P_373": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_373_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_373.nii.gz"
+        },
+        "ToothFairy2P_038": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_038_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_038.nii.gz"
+        },
+        "ToothFairy2P_394": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_394_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_394.nii.gz"
+        },
+        "ToothFairy2P_461": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_461_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_461.nii.gz"
+        },
+        "ToothFairy2P_256": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_256_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_256.nii.gz"
+        },
+        "ToothFairy2F_066": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_066_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_066.nii.gz"
+        },
+        "ToothFairy2P_060": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_060_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_060.nii.gz"
+        },
+        "ToothFairy2P_430": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_430_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_430.nii.gz"
+        },
+        "ToothFairy2P_032": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_032_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_032.nii.gz"
+        },
+        "ToothFairy2P_435": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_435_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_435.nii.gz"
+        },
+        "ToothFairy2P_203": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_203_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_203.nii.gz"
+        },
+        "ToothFairy2P_095": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_095_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_095.nii.gz"
+        },
+        "ToothFairy2P_496": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_496_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_496.nii.gz"
+        },
+        "ToothFairy2F_008": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_008_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_008.nii.gz"
+        },
+        "ToothFairy2P_254": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_254_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_254.nii.gz"
+        },
+        "ToothFairy2F_058": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_058_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_058.nii.gz"
+        },
+        "ToothFairy2P_327": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_327_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_327.nii.gz"
+        },
+        "ToothFairy2P_122": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_122_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_122.nii.gz"
+        },
+        "ToothFairy2P_443": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_443_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_443.nii.gz"
+        },
+        "ToothFairy2P_523": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_523_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_523.nii.gz"
+        },
+        "ToothFairy2F_043": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_043_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_043.nii.gz"
+        },
+        "ToothFairy2F_005": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_005_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_005.nii.gz"
+        },
+        "ToothFairy2P_114": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_114_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_114.nii.gz"
+        },
+        "ToothFairy2P_344": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_344_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_344.nii.gz"
+        },
+        "ToothFairy2P_005": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_005_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_005.nii.gz"
+        },
+        "ToothFairy2P_057": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_057_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_057.nii.gz"
+        },
+        "ToothFairy2P_409": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_409_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_409.nii.gz"
+        },
+        "ToothFairy2F_020": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_020_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_020.nii.gz"
+        },
+        "ToothFairy2P_200": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_200_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_200.nii.gz"
+        },
+        "ToothFairy2P_091": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_091_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_091.nii.gz"
+        },
+        "ToothFairy2P_009": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_009_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_009.nii.gz"
+        },
+        "ToothFairy2P_338": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_338_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_338.nii.gz"
+        },
+        "ToothFairy2P_249": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_249_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_249.nii.gz"
+        },
+        "ToothFairy2P_028": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_028_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_028.nii.gz"
+        },
+        "ToothFairy2P_212": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_212_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_212.nii.gz"
+        },
+        "ToothFairy2P_079": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_079_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_079.nii.gz"
+        },
+        "ToothFairy2P_211": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_211_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_211.nii.gz"
+        },
+        "ToothFairy2F_053": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_053_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_053.nii.gz"
+        },
+        "ToothFairy2P_054": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_054_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_054.nii.gz"
+        },
+        "ToothFairy2F_003": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_003_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_003.nii.gz"
+        },
+        "ToothFairy2P_465": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_465_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_465.nii.gz"
+        },
+        "ToothFairy2P_376": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_376_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_376.nii.gz"
+        },
+        "ToothFairy2F_031": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_031_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_031.nii.gz"
+        },
+        "ToothFairy2F_061": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_061_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_061.nii.gz"
+        },
+        "ToothFairy2P_501": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_501_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_501.nii.gz"
+        },
+        "ToothFairy2P_353": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_353_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_353.nii.gz"
+        },
+        "ToothFairy2P_377": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_377_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_377.nii.gz"
+        },
+        "ToothFairy2P_117": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_117_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_117.nii.gz"
+        },
+        "ToothFairy2P_111": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_111_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_111.nii.gz"
+        },
+        "ToothFairy2P_456": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_456_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_456.nii.gz"
+        },
+        "ToothFairy2P_437": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_437_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_437.nii.gz"
+        },
+        "ToothFairy2P_524": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_524_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_524.nii.gz"
+        },
+        "ToothFairy2P_034": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_034_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_034.nii.gz"
+        },
+        "ToothFairy2P_244": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_244_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_244.nii.gz"
+        },
+        "ToothFairy2P_346": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_346_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_346.nii.gz"
+        },
+        "ToothFairy2P_100": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_100_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_100.nii.gz"
+        },
+        "ToothFairy2P_123": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_123_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_123.nii.gz"
+        },
+        "ToothFairy2P_507": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_507_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_507.nii.gz"
+        },
+        "ToothFairy2P_058": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_058_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_058.nii.gz"
+        },
+        "ToothFairy2P_128": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_128_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_128.nii.gz"
+        },
+        "ToothFairy2P_393": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_393_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_393.nii.gz"
+        },
+        "ToothFairy2P_090": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_090_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_090.nii.gz"
+        },
+        "ToothFairy2P_089": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_089_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_089.nii.gz"
+        },
+        "ToothFairy2P_406": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_406_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_406.nii.gz"
+        },
+        "ToothFairy2F_060": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_060_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_060.nii.gz"
+        },
+        "ToothFairy2P_543": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_543_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_543.nii.gz"
+        },
+        "ToothFairy2P_467": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_467_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_467.nii.gz"
+        },
+        "ToothFairy2P_001": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_001_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_001.nii.gz"
+        },
+        "ToothFairy2P_133": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_133_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_133.nii.gz"
+        },
+        "ToothFairy2P_326": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_326_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_326.nii.gz"
+        },
+        "ToothFairy2P_434": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_434_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_434.nii.gz"
+        },
+        "ToothFairy2P_052": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_052_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_052.nii.gz"
+        },
+        "ToothFairy2P_530": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_530_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_530.nii.gz"
+        },
+        "ToothFairy2P_539": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_539_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_539.nii.gz"
+        },
+        "ToothFairy2P_336": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_336_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_336.nii.gz"
+        },
+        "ToothFairy2P_259": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_259_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_259.nii.gz"
+        },
+        "ToothFairy2P_540": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_540_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_540.nii.gz"
+        },
+        "ToothFairy2P_531": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_531_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_531.nii.gz"
+        },
+        "ToothFairy2P_084": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_084_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_084.nii.gz"
+        },
+        "ToothFairy2P_378": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_378_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_378.nii.gz"
+        },
+        "ToothFairy2F_034": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_034_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_034.nii.gz"
+        },
+        "ToothFairy2P_023": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_023_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_023.nii.gz"
+        },
+        "ToothFairy2P_014": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_014_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_014.nii.gz"
+        },
+        "ToothFairy2P_383": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_383_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_383.nii.gz"
+        },
+        "ToothFairy2P_253": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_253_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_253.nii.gz"
+        },
+        "ToothFairy2P_066": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_066_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_066.nii.gz"
+        },
+        "ToothFairy2P_499": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_499_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_499.nii.gz"
+        },
+        "ToothFairy2P_396": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_396_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_396.nii.gz"
+        },
+        "ToothFairy2F_018": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_018_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_018.nii.gz"
+        },
+        "ToothFairy2P_334": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_334_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_334.nii.gz"
+        },
+        "ToothFairy2P_331": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_331_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_331.nii.gz"
+        },
+        "ToothFairy2P_092": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_092_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_092.nii.gz"
+        },
+        "ToothFairy2P_198": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_198_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_198.nii.gz"
+        },
+        "ToothFairy2P_493": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_493_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_493.nii.gz"
+        },
+        "ToothFairy2P_485": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_485_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_485.nii.gz"
+        },
+        "ToothFairy2P_075": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_075_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_075.nii.gz"
+        },
+        "ToothFairy2P_045": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_045_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_045.nii.gz"
+        },
+        "ToothFairy2P_081": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_081_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_081.nii.gz"
+        },
+        "ToothFairy2P_121": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_121_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_121.nii.gz"
+        },
+        "ToothFairy2P_392": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_392_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_392.nii.gz"
+        },
+        "ToothFairy2P_258": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_258_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_258.nii.gz"
+        },
+        "ToothFairy2P_042": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_042_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_042.nii.gz"
+        },
+        "ToothFairy2F_021": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_021_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_021.nii.gz"
+        },
+        "ToothFairy2P_134": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_134_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_134.nii.gz"
+        },
+        "ToothFairy2P_363": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_363_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_363.nii.gz"
+        },
+        "ToothFairy2P_041": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_041_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_041.nii.gz"
+        },
+        "ToothFairy2P_475": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_475_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_475.nii.gz"
+        },
+        "ToothFairy2P_024": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_024_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_024.nii.gz"
+        },
+        "ToothFairy2P_511": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_511_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_511.nii.gz"
+        },
+        "ToothFairy2P_109": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_109_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_109.nii.gz"
+        },
+        "ToothFairy2P_112": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_112_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_112.nii.gz"
+        },
+        "ToothFairy2P_332": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_332_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_332.nii.gz"
+        },
+        "ToothFairy2P_215": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_215_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_215.nii.gz"
+        },
+        "ToothFairy2P_108": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_108_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_108.nii.gz"
+        },
+        "ToothFairy2P_135": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_135_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_135.nii.gz"
+        },
+        "ToothFairy2P_214": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_214_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_214.nii.gz"
+        },
+        "ToothFairy2P_191": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_191_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_191.nii.gz"
+        },
+        "ToothFairy2F_052": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_052_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_052.nii.gz"
+        },
+        "ToothFairy2P_016": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_016_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_016.nii.gz"
+        },
+        "ToothFairy2P_347": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_347_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_347.nii.gz"
+        },
+        "ToothFairy2P_391": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_391_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_391.nii.gz"
+        },
+        "ToothFairy2F_038": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_038_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_038.nii.gz"
+        },
+        "ToothFairy2P_385": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_385_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_385.nii.gz"
+        },
+        "ToothFairy2P_547": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_547_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_547.nii.gz"
+        },
+        "ToothFairy2P_242": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_242_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_242.nii.gz"
+        },
+        "ToothFairy2P_145": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_145_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_145.nii.gz"
+        },
+        "ToothFairy2P_192": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_192_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_192.nii.gz"
+        },
+        "ToothFairy2P_419": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_419_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_419.nii.gz"
+        },
+        "ToothFairy2P_486": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_486_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_486.nii.gz"
+        },
+        "ToothFairy2P_452": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_452_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_452.nii.gz"
+        },
+        "ToothFairy2P_257": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_257_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_257.nii.gz"
+        },
+        "ToothFairy2P_537": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_537_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_537.nii.gz"
+        },
+        "ToothFairy2P_513": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_513_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_513.nii.gz"
+        },
+        "ToothFairy2P_520": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_520_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_520.nii.gz"
+        },
+        "ToothFairy2P_107": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_107_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_107.nii.gz"
+        },
+        "ToothFairy2P_147": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_147_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_147.nii.gz"
+        },
+        "ToothFairy2P_420": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_420_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_420.nii.gz"
+        },
+        "ToothFairy2P_247": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_247_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_247.nii.gz"
+        },
+        "ToothFairy2P_503": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_503_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_503.nii.gz"
+        },
+        "ToothFairy2F_026": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_026_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_026.nii.gz"
+        },
+        "ToothFairy2P_238": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_238_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_238.nii.gz"
+        },
+        "ToothFairy2P_046": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_046_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_046.nii.gz"
+        },
+        "ToothFairy2P_454": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_454_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_454.nii.gz"
+        },
+        "ToothFairy2P_422": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_422_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_422.nii.gz"
+        },
+        "ToothFairy2P_459": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_459_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_459.nii.gz"
+        },
+        "ToothFairy2P_076": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_076_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_076.nii.gz"
+        },
+        "ToothFairy2P_113": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_113_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_113.nii.gz"
+        },
+        "ToothFairy2P_536": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_536_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_536.nii.gz"
+        },
+        "ToothFairy2P_517": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_517_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_517.nii.gz"
+        },
+        "ToothFairy2F_051": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_051_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_051.nii.gz"
+        },
+        "ToothFairy2P_447": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_447_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_447.nii.gz"
+        },
+        "ToothFairy2P_063": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_063_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_063.nii.gz"
+        },
+        "ToothFairy2P_350": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_350_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_350.nii.gz"
+        },
+        "ToothFairy2P_118": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_118_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_118.nii.gz"
+        },
+        "ToothFairy2P_144": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_144_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_144.nii.gz"
+        },
+        "ToothFairy2P_138": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_138_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_138.nii.gz"
+        },
+        "ToothFairy2F_012": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_012_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_012.nii.gz"
+        },
+        "ToothFairy2P_120": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_120_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_120.nii.gz"
+        },
+        "ToothFairy2P_243": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_243_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_243.nii.gz"
+        },
+        "ToothFairy2P_193": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_193_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_193.nii.gz"
+        },
+        "ToothFairy2P_194": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_194_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_194.nii.gz"
+        },
+        "ToothFairy2P_150": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_150_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_150.nii.gz"
+        },
+        "ToothFairy2P_101": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_101_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_101.nii.gz"
+        },
+        "ToothFairy2P_002": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_002_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_002.nii.gz"
+        },
+        "ToothFairy2F_063": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_063_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_063.nii.gz"
+        },
+        "ToothFairy2P_240": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_240_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_240.nii.gz"
+        },
+        "ToothFairy2P_429": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_429_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_429.nii.gz"
+        },
+        "ToothFairy2P_010": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_010_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_010.nii.gz"
+        },
+        "ToothFairy2P_085": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_085_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_085.nii.gz"
+        },
+        "ToothFairy2P_489": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_489_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_489.nii.gz"
+        },
+        "ToothFairy2P_473": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_473_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_473.nii.gz"
+        },
+        "ToothFairy2F_004": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_004_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_004.nii.gz"
+        },
+        "ToothFairy2P_545": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_545_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_545.nii.gz"
+        },
+        "ToothFairy2P_387": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_387_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_387.nii.gz"
+        },
+        "ToothFairy2P_064": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_064_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_064.nii.gz"
+        },
+        "ToothFairy2P_464": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_464_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_464.nii.gz"
+        },
+        "ToothFairy2P_232": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_232_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_232.nii.gz"
+        },
+        "ToothFairy2P_036": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_036_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_036.nii.gz"
+        },
+        "ToothFairy2P_119": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_119_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_119.nii.gz"
+        },
+        "ToothFairy2P_260": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_260_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_260.nii.gz"
+        },
+        "ToothFairy2P_321": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_321_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_321.nii.gz"
+        },
+        "ToothFairy2P_369": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_369_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_369.nii.gz"
+        },
+        "ToothFairy2P_352": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_352_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_352.nii.gz"
+        },
+        "ToothFairy2F_049": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_049_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_049.nii.gz"
+        },
+        "ToothFairy2P_522": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_522_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_522.nii.gz"
+        },
+        "ToothFairy2P_231": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_231_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_231.nii.gz"
+        },
+        "ToothFairy2P_521": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_521_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_521.nii.gz"
+        },
+        "ToothFairy2P_442": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_442_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_442.nii.gz"
+        },
+        "ToothFairy2P_362": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_362_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_362.nii.gz"
+        },
+        "ToothFairy2P_384": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_384_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_384.nii.gz"
+        },
+        "ToothFairy2P_542": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_542_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_542.nii.gz"
+        },
+        "ToothFairy2P_008": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_008_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_008.nii.gz"
+        },
+        "ToothFairy2P_020": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_020_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_020.nii.gz"
+        },
+        "ToothFairy2P_050": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_050_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_050.nii.gz"
+        },
+        "ToothFairy2F_010": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_010_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_010.nii.gz"
+        },
+        "ToothFairy2P_061": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_061_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_061.nii.gz"
+        },
+        "ToothFairy2P_019": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_019_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_019.nii.gz"
+        },
+        "ToothFairy2P_444": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_444_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_444.nii.gz"
+        },
+        "ToothFairy2P_251": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_251_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_251.nii.gz"
+        },
+        "ToothFairy2P_345": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_345_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_345.nii.gz"
+        },
+        "ToothFairy2P_094": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_094_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_094.nii.gz"
+        },
+        "ToothFairy2P_248": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_248_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_248.nii.gz"
+        },
+        "ToothFairy2P_207": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_207_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_207.nii.gz"
+        },
+        "ToothFairy2P_341": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_341_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_341.nii.gz"
+        },
+        "ToothFairy2P_471": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_471_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_471.nii.gz"
+        },
+        "ToothFairy2P_035": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_035_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_035.nii.gz"
+        },
+        "ToothFairy2F_014": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_014_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_014.nii.gz"
+        },
+        "ToothFairy2P_405": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_405_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_405.nii.gz"
+        },
+        "ToothFairy2P_418": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_418_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_418.nii.gz"
+        },
+        "ToothFairy2P_412": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_412_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_412.nii.gz"
+        },
+        "ToothFairy2P_504": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_504_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_504.nii.gz"
+        },
+        "ToothFairy2P_204": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_204_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_204.nii.gz"
+        },
+        "ToothFairy2F_011": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_011_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_011.nii.gz"
+        },
+        "ToothFairy2P_364": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_364_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_364.nii.gz"
+        },
+        "ToothFairy2P_546": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_546_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_546.nii.gz"
+        },
+        "ToothFairy2P_528": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_528_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_528.nii.gz"
+        },
+        "ToothFairy2F_002": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2F_002_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2F_002.nii.gz"
+        },
+        "ToothFairy2P_498": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_498_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_498.nii.gz"
+        },
+        "ToothFairy2P_143": {
+            "images": [
+                "../Dataset119_ToothFairy2_All/imagesTr/ToothFairy2P_143_0000.nii.gz"
+            ],
+            "label": "labelsTr/ToothFairy2P_143.nii.gz"
+        }
+    }
+}

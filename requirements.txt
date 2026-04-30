@@ -1,0 +1,76 @@
+# =====================
+# PyTorch (DO NOT INSTALL HERE)
+# =====================
+# torch installed manually with CUDA wheels into server_env_3.11
+# torchvision installed manually
+# DO NOT add torch or torchvision pins here
+
+# =====================
+# Mamba SSM (CUDA kernel - install after torch)
+# pip install causal-conv1d mamba-ssm --no-build-isolation --no-cache-dir
+# =====================
+causal-conv1d
+mamba-ssm
+
+# =====================
+# nnU-Net core dependencies
+# =====================
+acvl-utils>=0.2
+dynamic-network-architectures>=0.2
+batchgenerators>=0.25
+
+# =====================
+# Medical imaging I/O
+# =====================
+SimpleITK>=2.2.1
+nibabel
+dicom2nifti
+tifffile
+imagecodecs
+
+# =====================
+# Scientific computing
+# =====================
+numpy
+scipy
+scikit-image>=0.19.3
+scikit-learn
+medpy
+
+# =====================
+# Data / utilities
+# =====================
+pandas
+tqdm
+requests
+yacs
+
+# =====================
+# Visualization
+# =====================
+matplotlib
+seaborn
+graphviz
+opencv-python
+vtk
+PyMCubes
+# =====================
+# MONAI
+# =====================
+monai>=1.3.0
+
+# =====================
+# Web UI
+# =====================
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+
+# =====================
+# OPG / 2-D inference
+# =====================
+ultralytics
+Pillow
+httpx
+pydicom
