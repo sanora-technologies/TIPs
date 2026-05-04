@@ -7,3 +7,4 @@ LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 \
   python /home/oaiz/Documents/sanora/Dianexea_stack/TIPs/api_server_linux.py --port 7863 &
 
 ngrok http 7863
+

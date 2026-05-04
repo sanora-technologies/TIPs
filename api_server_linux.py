@@ -320,9 +320,13 @@ async def _fetch_image(url: str) -> np.ndarray:
 
     try:
         img = _PILImage.open(io.BytesIO(raw)).convert("RGB")
-    except Exception:
-        raise HTTPException(400, "Could not decode image")
-    return np.array(img)[..., ::-1]
+        return np.array(img)[..., ::-1]
+    except Exception as pil_err:
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        decoded = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if decoded is not None:
+            return decoded
+        raise HTTPException(400, f"Could not decode image (PIL: {pil_err})")
 
 
 def _encode_image(img_bgr: np.ndarray) -> str:
@@ -357,9 +361,13 @@ def _fetch_image_sync(url: str) -> np.ndarray:
                     raise RuntimeError(f"Could not decode DICOM: {e}")
             try:
                 img = _PILImage.open(io.BytesIO(raw)).convert("RGB")
-            except Exception:
-                raise RuntimeError("Could not decode image")
-            return np.array(img)[..., ::-1]
+                return np.array(img)[..., ::-1]
+            except Exception as pil_err:
+                arr2 = np.frombuffer(raw, dtype=np.uint8)
+                decoded = cv2.imdecode(arr2, cv2.IMREAD_COLOR)
+                if decoded is not None:
+                    return decoded
+                raise RuntimeError(f"Could not decode image (PIL: {pil_err})")
         else:
             raise RuntimeError("Cannot resolve relative URL: set BACKEND_BASE_URL or BACKEND_ASSETS_PATH")
 
@@ -387,9 +395,13 @@ def _fetch_image_sync(url: str) -> np.ndarray:
 
     try:
         img = _PILImage.open(io.BytesIO(raw)).convert("RGB")
-    except Exception:
-        raise RuntimeError("Could not decode image")
-    return np.array(img)[..., ::-1]
+        return np.array(img)[..., ::-1]
+    except Exception as pil_err:
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        decoded = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if decoded is not None:
+            return decoded
+        raise RuntimeError(f"Could not decode image (PIL: {pil_err})")
 
 
 def _send_webhook(payload: dict) -> None:
@@ -418,7 +430,7 @@ def _send_webhook(payload: dict) -> None:
 
 def _upload_report_zip(zip_bytes: bytes, filename: str, ai_report_id: Optional[int] = None) -> Optional[str]:
     """
-    POST a report ZIP to the NestJS backend (POST /api/v1/reports).
+    POST a report ZIP to the NestJS backend (POST /api/v1/reports?ai_report_id=<id>).
     Returns the report_link string from the JSON response, or None on failure.
     Used when BACKEND_API_URL is set (remote / ngrok mode).
     """
@@ -1979,9 +1991,10 @@ def _process_opg_job(job_id: str) -> None:
             job['elapsed_s'] = round(time.time() - t0, 1)
 
         webhook_payload: dict = {
-            "ai_report_id": job['ai_report_id'],
-            "report_type":  "file",
-            "status":       "completed",
+            "ai_report_id":  job['ai_report_id'],
+            "report_type":   "file",
+            "status":        "completed",
+            "report_link":   report_link,
             "metadata": {
                 "processing_time_ms":  elapsed_ms,
                 "model_version":       "yolov8",
@@ -1990,9 +2003,8 @@ def _process_opg_job(job_id: str) -> None:
                 ) if teeth_dets else 0.0,
                 "detected_conditions": list({d["class_name"] for d in matched}),
             },
+            "error_message": None,
         }
-        if report_link:
-            webhook_payload["report_link"] = report_link
         _send_webhook(webhook_payload)
 
     except Exception as e:
@@ -2141,16 +2153,16 @@ def _process_job(job_id: str) -> None:
 
         report_link = _save_cbct_report(case_name, out_dir / "result_cache.json", job['ai_report_id'])
         webhook_payload: dict = {
-            "ai_report_id": job['ai_report_id'],
-            "report_type":  "file",
-            "status":       "completed",
+            "ai_report_id":  job['ai_report_id'],
+            "report_type":   "file",
+            "status":        "completed",
+            "report_link":   report_link,
             "metadata": {
                 "processing_time_ms": round(elapsed * 1000),
                 "model_version":      "nnunet_umamba",
             },
+            "error_message": None,
         }
-        if report_link:
-            webhook_payload["report_link"] = report_link
         _send_webhook(webhook_payload)
 
     except Exception as e:
