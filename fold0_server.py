@@ -413,7 +413,7 @@ def _run_job(job_id: str, zip_bytes: bytes) -> None:
                 gc.collect()
                 _malloc_trim()
 
-        del seg_arr, seg_img
+        del seg_arr
         gc.collect()
         _malloc_trim()
 
@@ -528,6 +528,18 @@ hr.div{border:none;border-top:1px solid #222;margin:4px 0}
     <input id="fi" type="file" accept=".zip" style="display:none"
            onchange="pickFile(this.files[0])"/>
     <button id="run" disabled onclick="runInference()">Run Inference</button>
+    <div style="display:flex;align-items:center;gap:6px;margin:2px 0">
+      <hr style="flex:1;border:none;border-top:1px solid #2a2a2a"/>
+      <span style="font-size:10px;color:#444">or</span>
+      <hr style="flex:1;border:none;border-top:1px solid #2a2a2a"/>
+    </div>
+    <button id="load-btn" onclick="document.getElementById('rf').click()"
+            style="padding:7px;background:#111e11;border:1px solid #2a472a;border-radius:5px;
+                   color:#7bc87b;font-size:12px;font-weight:600;cursor:pointer;width:100%">
+      Load Saved Result
+    </button>
+    <input id="rf" type="file" accept=".zip" style="display:none"
+           onchange="loadSavedResult(this.files[0])"/>
     <div id="prog">
       <div style="display:flex;justify-content:space-between;font-size:11px;color:#666">
         <span id="plbl"></span><span id="ppct"></span></div>
@@ -822,6 +834,37 @@ window.toggleGrp = function(grp) {
   body.classList.toggle('open');
 };
 
+// ── load previously saved result zip ─────────────────────────────────────────
+window.loadSavedResult = async function(f) {
+  if (!f) return;
+  document.getElementById('err').style.display = 'none';
+  setProg(true);
+  try {
+    upd('loading', 20, 'Reading zip…');
+    const buf = await f.arrayBuffer();
+    upd('loading', 50, 'Parsing meshes…');
+    const zip = await JSZip.loadAsync(buf);
+    if (!zip.file('result.json'))
+      throw new Error('Not a valid result zip — missing result.json');
+    const meta = JSON.parse(await zip.file('result.json').async('string'));
+    const all = [];
+    for (const layer of ['toothseg','pulp','structures']) {
+      for (const m of (meta[layer]?.meshes||[])) {
+        const sf = zip.file('stls/'+layer+'_'+m.label+'.stl');
+        if (!sf) continue;
+        const ab = await sf.async('arraybuffer');
+        try { all.push({...m, layer, geo:parseSTL(ab)}); } catch(e){}
+      }
+    }
+    setProg(false);
+    buildViewer(all);
+  } catch(e) {
+    setProg(false);
+    const el = document.getElementById('err');
+    el.textContent = e.message; el.style.display = 'block';
+  }
+};
+
 window.resetUI = function() {
   if (pollTmr) clearInterval(pollTmr);
   if (renderer) {renderer.dispose(); renderer.domElement.remove(); renderer=null;}
@@ -836,6 +879,7 @@ window.resetUI = function() {
   document.getElementById('placeholder').style.display = 'flex';
   document.getElementById('err').style.display   = 'none';
   document.getElementById('fi').value = '';
+  document.getElementById('rf').value = '';
   setProg(false);
   // clear mesh list rows
   for (const id of ['gb-teeth','gb-pulp','gb-jaw','gb-other'])

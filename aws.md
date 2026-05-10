@@ -7,7 +7,7 @@ pem key name : dianexea_app.pem
 ## Steps
 `pem ket conversion to private read limited`
 chmod 400 dianexea_app.pem
-ssh -i dianexea_app.pem ubuntu@13.63.234.199
+ssh -i dianexea_app.pem ubuntu@16.16.124.180
 
 # Node installation
 
@@ -81,7 +81,7 @@ npm run build
 
 pm2 start /var/www/backend/dist/src/main.js --name dentai-backend -- --port 3001
 
-pm2 save
+pm2 start /var/www/backend/dist/src/main.js --name dentai-backend -- --port 3001
 pm2 startup
 
 frontend:
