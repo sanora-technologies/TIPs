@@ -4,6 +4,17 @@ Dental CBCT inference server for: **teeth segmentation, tooth numbering, pulp de
 
 ---
 
+source /home/oaiz/Documents/sanora/Dianexea_stack/TIPs/ToothGroupNetwork/venv_tgn/bin/activate
+
+
+cd /home/oaiz/Documents/sanora/Dianexea_stack/TIPs
+source ToothGroupNetwork/venv_tgn/bin/activate
+python tooth_segmentation_server.py \
+  --tgn_repo ./ToothGroupNetwork \
+  --tgn_venv ./ToothGroupNetwork/venv_tgn \
+  --port 7863
+
+
 ## System Requirements
 
 - **OS**: Ubuntu 24.04

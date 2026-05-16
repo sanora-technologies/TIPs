@@ -228,12 +228,15 @@ LAYER_FILES = {
 
 # ── OPG / 2-D inference (YOLO) ────────────────────────────────────────────────
 
-OPG_WEIGHTS   = REPO_ROOT / "opg"      / "best.pt"
-TEETH_WEIGHTS = REPO_ROOT / "t_number" / "best.pt"
+OPG_WEIGHTS   = REPO_ROOT / "opg"           / "best.pt"
+TEETH_WEIGHTS = REPO_ROOT / "t_number"      / "best.pt"
+CEPH_WEIGHTS  = REPO_ROOT / "cephalometric" / "best.pt"
 
 class _MediaType(str, Enum):
-    OPG_XRAY = "OPG_XRAY"
-    CBCT_3D  = "CBCT_3D"
+    OPG_XRAY          = "OPG_XRAY"
+    CBCT_3D           = "CBCT_3D"
+    CEPHALOMETRIC_XRAY = "CEPHALOMETRIC_XRAY"
+    IOS_SCAN          = "IOS_SCAN"  # Intraoral surface scan (.obj/.stl) → tooth segmentation
 
 OPG_CLASSES = {
     0: "Apical Periodontitis",
@@ -280,6 +283,10 @@ BACKEND_BASE_URL    = os.environ.get('BACKEND_BASE_URL', '').rstrip('/')   # ass
 BACKEND_API_URL     = os.environ.get('BACKEND_API_URL', '').rstrip('/')    # API base URL e.g. https://api.dianexea.com/api/v1
 BACKEND_ASSETS_PATH = os.environ.get('BACKEND_ASSETS_PATH', '')            # local fallback (ignored when BACKEND_BASE_URL is set)
 
+# Tooth segmentation (ToothGroupNetwork) — runs in a separate venv via subprocess
+TGN_REPO_PATH = Path(os.environ.get('TGN_REPO_PATH', str(REPO_ROOT / 'ToothGroupNetwork')))
+TGN_VENV_PATH = Path(os.environ.get('TGN_VENV_PATH', str(REPO_ROOT / 'ToothGroupNetwork' / 'venv_tgn')))
+
 def _verify_token(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
     if creds.credentials != _OPG_API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing token")
@@ -287,6 +294,72 @@ def _verify_token(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
 # Load YOLO models once (fast — no GPU warmup needed)
 _opg_model   = YOLO(str(OPG_WEIGHTS))   if OPG_WEIGHTS.exists()   else None
 _teeth_model = YOLO(str(TEETH_WEIGHTS)) if TEETH_WEIGHTS.exists() else None
+
+# ── Cephalometric (HRNet) constants ───────────────────────────────────────────
+
+CEPH_LANDMARK_ORDER = [
+    "A","ANS","B","Me","N","Or","Pog","PNS","Pn","R","S",
+    "Ar","Co","Gn","Go","Po","LPM","LIT","LMT","UPM","UIA",
+    "UIT","UMT","LIA","Li","Ls","N`","Pog`","Sn",
+]
+
+CEPH_LM_GROUP = {
+    "A": "skeletal","ANS":"skeletal","B":"skeletal","Me":"skeletal",
+    "N":"skeletal","Or":"skeletal","Pog":"skeletal","PNS":"skeletal",
+    "Pn":"skeletal","R":"skeletal","S":"skeletal","Ar":"skeletal",
+    "Co":"skeletal","Gn":"skeletal","Go":"skeletal","Po":"skeletal",
+    "LPM":"dental","LIT":"dental","LMT":"dental","UPM":"dental",
+    "UIA":"dental","UIT":"dental","UMT":"dental","LIA":"dental",
+    "Li":"soft","Ls":"soft","N`":"soft","Pog`":"soft","Sn":"soft",
+}
+
+CEPH_GROUP_COLORS = {
+    "skeletal": (80,  80,  255),   # BGR red
+    "dental":   (255, 150, 80),    # BGR blue-ish
+    "soft":     (80,  220, 80),    # BGR green
+}
+
+CEPH_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+CEPH_IMAGENET_STD  = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+CEPH_INPUT_SIZE    = 640
+CEPH_HEATMAP_STRIDE = 2
+CEPH_CLAHE         = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
+_ceph_model = None
+
+def _load_ceph_model():
+    """Load HRNet cephalometric model once; keep in module-level cache."""
+    global _ceph_model
+    if _ceph_model is not None:
+        return _ceph_model
+    if not CEPH_WEIGHTS.exists():
+        return None
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "cephalometric"))
+        from cephalometric.src.model import CephalometricModel, soft_argmax as _sa  # noqa: F401
+        model = CephalometricModel(pretrained=False, use_cvm_head=False,
+                                   heatmap_stride=CEPH_HEATMAP_STRIDE)
+        ckpt  = torch.load(str(CEPH_WEIGHTS), map_location="cpu", weights_only=False)
+        model.load_state_dict(ckpt["model_state"], strict=True)
+        if ckpt.get("ema_shadow"):
+            state = model.state_dict()
+            for k, v in ckpt["ema_shadow"].items():
+                if k in state:
+                    state[k] = v.cpu()
+            model.load_state_dict(state, strict=True)
+        model.eval()
+        _ceph_model = model
+        print(f'[ceph] Model loaded from {CEPH_WEIGHTS}')
+    except Exception as e:
+        print(f'[ceph] WARNING: could not load model: {e}')
+    return _ceph_model
+
+# Eagerly load if checkpoint exists (non-blocking — happens before first request)
+if CEPH_WEIGHTS.exists():
+    try:
+        _load_ceph_model()
+    except Exception as _e:
+        print(f'[ceph] Startup load failed (will retry on first request): {_e}')
 
 # ── OPG helpers ────────────────────────────────────────────────────────────────
 
@@ -1928,6 +2001,195 @@ def _cleanup_before_job(current_zip: str) -> None:
     print('[server]   gc + CUDA cache flushed + malloc_trim + sync')
 
 
+def _ceph_preprocess(img_bgr: np.ndarray, pixel_size: float = 0.100):
+    """Preprocess a BGR image for the cephalometric HRNet model.
+    Returns (tensor, meta) identical to the standalone app.py pipeline.
+    """
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    H_orig, W_orig = gray.shape
+
+    TARGET_MM_PX   = 0.1
+    MAX_PHYS_SCALE = 1.5
+    phys_scale = min(pixel_size / TARGET_MM_PX, MAX_PHYS_SCALE)
+    H_phys = round(H_orig * phys_scale)
+    W_phys = round(W_orig * phys_scale)
+    gray = cv2.resize(gray, (W_phys, H_phys), interpolation=cv2.INTER_LINEAR)
+    gray = CEPH_CLAHE.apply(gray)
+
+    lb_scale = CEPH_INPUT_SIZE / max(H_phys, W_phys)
+    H_lb = round(H_phys * lb_scale)
+    W_lb = round(W_phys * lb_scale)
+    gray_lb = cv2.resize(gray, (W_lb, H_lb), interpolation=cv2.INTER_LINEAR)
+    pad_top  = (CEPH_INPUT_SIZE - H_lb) // 2
+    pad_left = (CEPH_INPUT_SIZE - W_lb) // 2
+    canvas = np.zeros((CEPH_INPUT_SIZE, CEPH_INPUT_SIZE), dtype=np.uint8)
+    canvas[pad_top:pad_top + H_lb, pad_left:pad_left + W_lb] = gray_lb
+
+    img3 = cv2.merge([canvas, canvas, canvas]).astype(np.float32) / 255.0
+    img3 = (img3 - CEPH_IMAGENET_MEAN) / CEPH_IMAGENET_STD
+    tensor = torch.from_numpy(img3.transpose(2, 0, 1)).unsqueeze(0)
+
+    meta = dict(H_orig=H_orig, W_orig=W_orig,
+                phys_scale=phys_scale, lb_scale=lb_scale,
+                pad_top=pad_top, pad_left=pad_left)
+    return tensor, meta
+
+
+def _ceph_to_original(coords_input: np.ndarray, meta: dict) -> np.ndarray:
+    coords = coords_input.copy().astype(float)
+    coords[:, 0] -= meta["pad_left"]
+    coords[:, 1] -= meta["pad_top"]
+    coords /= meta["lb_scale"]
+    coords /= meta["phys_scale"]
+    return coords
+
+
+def _ceph_draw_landmarks(img_bgr: np.ndarray, coords_orig: np.ndarray) -> np.ndarray:
+    H, W = img_bgr.shape[:2]
+    img  = img_bgr.copy()
+    dot_r      = max(5, min(H, W) // 120)
+    outline    = max(1, dot_r // 4)
+    font_scale = max(0.35, min(H, W) / 1800)
+    font_thick = max(1, int(font_scale * 1.8))
+    for sym, (x, y) in zip(CEPH_LANDMARK_ORDER, coords_orig):
+        xi, yi = int(round(x)), int(round(y))
+        color  = CEPH_GROUP_COLORS[CEPH_LM_GROUP[sym]]
+        cv2.circle(img, (xi, yi), dot_r + outline, (0, 0, 0), -1)
+        cv2.circle(img, (xi, yi), dot_r, color, -1)
+        tx, ty = xi + dot_r + 3, yi + int(font_scale * 10)
+        cv2.putText(img, sym, (tx+1, ty+1),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0,0,0), font_thick+1, cv2.LINE_AA)
+        cv2.putText(img, sym, (tx, ty),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255,255,255), font_thick, cv2.LINE_AA)
+    return img
+
+
+def _process_ceph_job(job_id: str) -> None:
+    """Run cephalometric HRNet inference in a background thread and deliver result via webhook."""
+    with _jobs_lock:
+        job = _jobs[job_id]
+        job['status']  = 'running'
+        job['stage']   = 'running'
+        job['started'] = time.time()
+
+    t0 = time.time()
+    try:
+        model = _load_ceph_model()
+        if model is None:
+            raise RuntimeError("Cephalometric model weights not found at startup")
+
+        sys.path.insert(0, str(REPO_ROOT / "cephalometric"))
+        from cephalometric.src.model import soft_argmax as _soft_argmax
+        from cephalometric.src.measurements import get_measurements
+        from cephalometric.src.draw_analysis import draw_analysis as _draw_analysis
+
+        img_bgr = _fetch_image_sync(job['media_url'])
+        pixel_size = float(job.get('pixel_size') or 0.100)
+
+        tensor, meta = _ceph_preprocess(img_bgr, pixel_size)
+        with torch.no_grad():
+            hm = model(tensor)["heatmaps"]                    # (1,29,320,320)
+        coords_hm   = _soft_argmax(hm)[0].cpu().numpy()       # (29,2) in heatmap space
+        coords_input = coords_hm * CEPH_HEATMAP_STRIDE        # → 640×640 space
+        coords_orig  = _ceph_to_original(coords_input, meta)  # → original pixels
+
+        lm = {sym: coords_orig[i] for i, sym in enumerate(CEPH_LANDMARK_ORDER)}
+
+        # Tier-2 measurements (superset of tier-1)
+        measurements = get_measurements(lm, pixel_size, tier=2)
+
+        # Annotated image: landmarks + analysis planes
+        img_rgb   = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        vis_rgb   = np.array(img_rgb)
+        vis_rgb   = _draw_analysis(vis_rgb, lm, tier=2)
+        # Draw landmark dots on top of planes
+        vis_bgr   = cv2.cvtColor(vis_rgb, cv2.COLOR_RGB2BGR)
+        vis_bgr   = _ceph_draw_landmarks(vis_bgr, coords_orig)
+
+        # Serialise
+        lm_serial = {sym: {"x": round(float(xy[0]), 2), "y": round(float(xy[1]), 2)}
+                     for sym, xy in lm.items()}
+
+        meas_serial = []
+        for m in measurements:
+            meas_serial.append({
+                "name":   m["name"],
+                "value":  round(float(m["value"]), 2),
+                "unit":   m["unit"],
+                "normal": m["normal"],
+                "status": m["status"],
+                "note":   m.get("note", ""),
+            })
+
+        elapsed_ms = round((time.time() - t0) * 1000)
+
+        ceph_result = {
+            "landmarks":      lm_serial,
+            "measurements":   meas_serial,
+            "original_image": _encode_image(img_bgr),
+            "annotated_image": _encode_image(vis_bgr),
+            "image_width":    img_bgr.shape[1],
+            "image_height":   img_bgr.shape[0],
+            "pixel_size_mm":  pixel_size,
+        }
+
+        # Derive skeletal_class from measurements
+        for m in meas_serial:
+            if m["name"] == "ANB":
+                ceph_result["skeletal_class"] = m["status"]
+                break
+
+        # Compact orthodontic values echoed into the webhook metadata so
+        # downstream consumers (e.g. aligner AI prefill) don't have to unzip the
+        # report. The full measurement list still lives inside the ZIP.
+        _ceph_compact: dict = {}
+        for m in meas_serial:
+            _nm = str(m.get("name", "")).lower()
+            if   _nm == "anb":      _ceph_compact["anb_angle"] = m["value"]
+            elif _nm == "sna":      _ceph_compact["sna_angle"] = m["value"]
+            elif _nm == "snb":      _ceph_compact["snb_angle"] = m["value"]
+            elif _nm == "overjet":  _ceph_compact["overjet"]   = m["value"]
+            elif _nm == "overbite": _ceph_compact["overbite"]  = m["value"]
+
+        report_link = _save_opg_report(ceph_result, job['ai_report_id'])
+
+        with _jobs_lock:
+            job['status']    = 'done'
+            job['stage']     = 'done'
+            job['elapsed_s'] = round(time.time() - t0, 1)
+
+        webhook_payload: dict = {
+            "ai_report_id":  job['ai_report_id'],
+            "report_type":   "file",
+            "status":        "completed",
+            "report_link":   report_link,
+            "metadata": {
+                "processing_time_ms":  elapsed_ms,
+                "model_version":       "hrnet-w32-ceph",
+                "confidence_score":    1.0,
+                "detected_conditions": [ceph_result.get("skeletal_class", "")],
+                **_ceph_compact,
+            },
+            "error_message": None,
+        }
+        _send_webhook(webhook_payload)
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f'[ceph] ERROR job {job_id[:8]}: {e}\n{tb}')
+        with _jobs_lock:
+            job['status']    = 'error'
+            job['stage']     = 'error'
+            job['elapsed_s'] = round(time.time() - t0, 1)
+            job['error']     = str(e)
+        _send_webhook({
+            "ai_report_id":  job['ai_report_id'],
+            "report_type":   "file",
+            "status":        "failed",
+            "error_message": str(e),
+        })
+
+
 def _process_opg_job(job_id: str) -> None:
     """Run OPG YOLO inference in a background thread and deliver result via webhook."""
     with _jobs_lock:
@@ -2021,6 +2283,465 @@ def _process_opg_job(job_id: str) -> None:
             "status":        "failed",
             "error_message": str(e),
         })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Tooth Segmentation (IOS_SCAN) — runs ToothGroupNetwork inference in subprocess
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _fetch_bytes_sync(url: str) -> bytes:
+    """Download raw bytes from url. Resolves relative paths against BACKEND_BASE_URL/BACKEND_ASSETS_PATH."""
+    if not url.startswith(('http://', 'https://')):
+        if BACKEND_BASE_URL:
+            url = BACKEND_BASE_URL + '/' + url.lstrip('/')
+        elif BACKEND_ASSETS_PATH:
+            local_path = Path(BACKEND_ASSETS_PATH) / url
+            if not local_path.exists():
+                raise RuntimeError(f"Local asset not found: {local_path}")
+            return local_path.read_bytes()
+        else:
+            raise RuntimeError("Cannot resolve relative URL: set BACKEND_BASE_URL or BACKEND_ASSETS_PATH")
+    resp = httpx.get(url, timeout=120, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True)
+    resp.raise_for_status()
+    return resp.content
+
+
+def _tgn_python() -> str:
+    """Path to the TGN venv's python interpreter."""
+    for cand in [TGN_VENV_PATH / 'bin' / 'python', TGN_VENV_PATH / 'bin' / 'python3']:
+        if cand.exists():
+            return str(cand)
+    raise RuntimeError(f"ToothGroupNetwork venv python not found at {TGN_VENV_PATH}")
+
+
+def _compute_measurements(vertices, labels, arch: str) -> dict:
+    """
+    Compute orthodontic measurements from a per-vertex labeled IOS mesh.
+    All distances are in mesh units (IOS scans are typically mm).
+
+    Algorithm:
+      • Group vertices by FDI label, drop clusters with <30 verts (noise)
+      • Compute per-tooth centroid
+      • Fit a plane through centroids via PCA → smallest-variance axis = vertical
+      • For each tooth:
+          - M-D direction = arch tangent from neighbor centroids, projected into arch plane
+          - B-L direction = vertical × M-D
+          - widths = extent of vertex projections along each axis
+      • Arch length = sum of inter-centroid distances along arch order
+      • Intercanine / intermolar widths = canine/molar centroid distances
+      • Anterior crowding = Σ canine-to-canine M-D widths − arch length canine-to-canine
+
+    Returns dict with per-tooth list + arch-level fields, or {'error': '...'}.
+    """
+    try:
+        verts = np.asarray(vertices, dtype=np.float64)
+        lbls  = np.asarray(labels, dtype=np.int32)
+    except Exception as e:
+        return {'error': f'invalid input: {e}'}
+
+    if verts.ndim != 2 or verts.shape[1] != 3:
+        return {'error': f'vertices must be (N,3), got {verts.shape}'}
+    if len(verts) != len(lbls):
+        return {'error': f'vertex/label count mismatch: {len(verts)} vs {len(lbls)}'}
+
+    arch_l = (arch or '').lower()
+    if arch_l == 'upper':
+        arch_order  = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28]
+        canine_pair = (13, 23)
+        molar_pair  = (16, 26)
+    elif arch_l == 'lower':
+        arch_order  = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38]
+        canine_pair = (43, 33)
+        molar_pair  = (46, 36)
+    else:
+        return {'error': f"unknown arch '{arch}'"}
+
+    MIN_VERTS_PER_TOOTH = 30
+
+    # 1. Group vertices by tooth + centroids
+    tooth_verts: dict = {}
+    tooth_centroids: dict = {}
+    for fdi in arch_order:
+        mask = (lbls == fdi)
+        n = int(mask.sum())
+        if n < MIN_VERTS_PER_TOOTH:
+            continue
+        v = verts[mask]
+        tooth_verts[fdi] = v
+        tooth_centroids[fdi] = v.mean(axis=0)
+
+    present = [fdi for fdi in arch_order if fdi in tooth_centroids]
+    if len(present) < 3:
+        return {'error': f'too few teeth ({len(present)})', 'teeth_detected': len(present)}
+
+    # 2. Plane normal via PCA on centroids = vertical axis (occlusal-apical)
+    centroid_arr = np.array([tooth_centroids[fdi] for fdi in present])
+    centered = centroid_arr - centroid_arr.mean(axis=0)
+    try:
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        vertical = vh[2]                           # smallest-variance direction
+        vn = np.linalg.norm(vertical)
+        vertical = vertical / vn if vn > 1e-9 else np.array([0.0, 0.0, 1.0])
+    except Exception:
+        vertical = np.array([0.0, 0.0, 1.0])
+
+    # 2b. Orient vertical so +vertical points toward the occlusal (cusp) side.
+    # Heuristic: tooth crowns are AWAY from gingiva. Gingiva = label 0.
+    # If gingiva centroid → all-teeth centroid points opposite to vertical, flip.
+    gingiva_mask = (lbls == 0)
+    all_teeth_mask = (lbls > 0)
+    if gingiva_mask.sum() > 50 and all_teeth_mask.sum() > 50:
+        gum_c   = verts[gingiva_mask].mean(axis=0)
+        teeth_c = verts[all_teeth_mask].mean(axis=0)
+        if float(np.dot(vertical, teeth_c - gum_c)) < 0:
+            vertical = -vertical
+
+    # 3. Per-tooth widths
+    per_tooth = []
+    for i, fdi in enumerate(present):
+        v = tooth_verts[fdi]
+        c = tooth_centroids[fdi]
+
+        # M-D = arch tangent (from neighbor centroids)
+        if len(present) == 1:
+            md = np.array([1.0, 0.0, 0.0])
+        elif i == 0:
+            md = tooth_centroids[present[1]] - c
+        elif i == len(present) - 1:
+            md = c - tooth_centroids[present[-2]]
+        else:
+            md = tooth_centroids[present[i + 1]] - tooth_centroids[present[i - 1]]
+
+        n_md = np.linalg.norm(md)
+        if n_md < 1e-6:
+            continue
+        md = md / n_md
+
+        # Project into arch plane (remove vertical component)
+        md = md - np.dot(md, vertical) * vertical
+        n_md = np.linalg.norm(md)
+        if n_md < 1e-6:
+            continue
+        md = md / n_md
+
+        # B-L = vertical × M-D (perpendicular to both, in arch plane)
+        bl = np.cross(vertical, md)
+        n_bl = np.linalg.norm(bl)
+        if n_bl < 1e-6:
+            continue
+        bl = bl / n_bl
+
+        rel = v - c
+        md_proj = rel @ md
+        bl_proj = rel @ bl
+        h_proj  = rel @ vertical
+
+        # Cusp tip = vertex with max projection along +vertical (occlusal side)
+        cusp_idx = int(np.argmax(h_proj))
+        cusp_tip = v[cusp_idx]
+
+        # Long axis = first principal component of the tooth's vertex cloud.
+        # Aligned so it points to the occlusal side (positive component along vertical).
+        try:
+            _, _, vh_t = np.linalg.svd(rel, full_matrices=False)
+            long_axis = vh_t[0]
+            ln = np.linalg.norm(long_axis)
+            long_axis = long_axis / ln if ln > 1e-9 else vertical.copy()
+            if float(np.dot(long_axis, vertical)) < 0:
+                long_axis = -long_axis
+            # Tilt = angle between long axis and vertical (0° = perfectly upright)
+            cos_t = float(np.clip(np.dot(long_axis, vertical), -1.0, 1.0))
+            tilt_deg = float(np.degrees(np.arccos(cos_t)))
+        except Exception:
+            long_axis = vertical.copy()
+            tilt_deg = 0.0
+
+        per_tooth.append({
+            'fdi':                   int(fdi),
+            'mesiodistal_width_mm':  round(float(md_proj.max() - md_proj.min()), 2),
+            'buccolingual_width_mm': round(float(bl_proj.max() - bl_proj.min()), 2),
+            'crown_height_mm':       round(float(h_proj.max()  - h_proj.min()),  2),
+            'centroid':              [round(float(c[k]), 2) for k in range(3)],
+            'cusp_tip':              [round(float(cusp_tip[k]), 2) for k in range(3)],
+            'long_axis':             [round(float(long_axis[k]), 4) for k in range(3)],
+            'tilt_deg':              round(tilt_deg, 1),
+            'vertex_count':          int(len(v)),
+        })
+
+    # 4. Arch length — straight-line sum between consecutive centroids
+    arch_length = 0.0
+    for i in range(len(present) - 1):
+        arch_length += float(np.linalg.norm(
+            tooth_centroids[present[i + 1]] - tooth_centroids[present[i]]
+        ))
+
+    # 5. Intercanine + intermolar — cusp tip to cusp tip (orthodontic standard)
+    cusp_tips_map = {t['fdi']: np.array(t['cusp_tip'], dtype=np.float64) for t in per_tooth}
+
+    def _cusp_dist(a: int, b: int):
+        if a in cusp_tips_map and b in cusp_tips_map:
+            return round(float(np.linalg.norm(cusp_tips_map[a] - cusp_tips_map[b])), 2)
+        return None
+
+    intercanine = _cusp_dist(canine_pair[0], canine_pair[1])
+    intermolar  = _cusp_dist(molar_pair[0],  molar_pair[1])
+
+    # 6. Anterior crowding (canine to canine)
+    crowding = None
+    c_r, c_l = canine_pair
+    if c_r in tooth_centroids and c_l in tooth_centroids:
+        i_r = present.index(c_r)
+        i_l = present.index(c_l)
+        lo, hi = (i_r, i_l) if i_r < i_l else (i_l, i_r)
+        anterior = present[lo:hi + 1]
+        widths = {t['fdi']: t['mesiodistal_width_mm'] for t in per_tooth}
+        sum_md = sum(widths.get(f, 0.0) for f in anterior)
+        ant_arch_len = 0.0
+        for i in range(lo, hi):
+            ant_arch_len += float(np.linalg.norm(
+                tooth_centroids[present[i + 1]] - tooth_centroids[present[i]]
+            ))
+        crowding = round(sum_md - ant_arch_len, 2)
+
+    return {
+        'arch':                 arch_l,
+        'teeth_detected':       len(present),
+        'present_teeth':        present,
+        'per_tooth':            per_tooth,
+        'arch_length_mm':       round(arch_length, 2),
+        'intercanine_width_mm': intercanine,
+        'intermolar_width_mm':  intermolar,
+        'crowding_mm':          crowding,
+    }
+
+
+def _run_tgn_inference(file_bytes: bytes, filename: str, arch: str) -> dict:
+    """
+    Run ToothGroupNetwork inference on a single IOS mesh.
+    Returns {labels, vertex_count, label_summary, model_used, inference_seconds, measurements}.
+    """
+    if not TGN_REPO_PATH.exists():
+        raise RuntimeError(f"ToothGroupNetwork repo not found at {TGN_REPO_PATH}")
+    ckpt_fps = TGN_REPO_PATH / 'ckpts' / 'tgnet_fps.h5'
+    ckpt_bdl = TGN_REPO_PATH / 'ckpts' / 'tgnet_bdl.h5'
+    if not ckpt_fps.exists() or not ckpt_bdl.exists():
+        raise RuntimeError(f"TGN weights missing — expected {ckpt_fps} and {ckpt_bdl}")
+    if arch not in ('upper', 'lower'):
+        raise ValueError(f"arch must be 'upper' or 'lower', got {arch!r}")
+
+    import shutil
+    t0 = time.perf_counter()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        ext = Path(filename).suffix.lower()
+        uploaded = tmp / f"input{ext}"
+        uploaded.write_bytes(file_bytes)
+
+        # STL → OBJ conversion (TGN requires OBJ).
+        # trimesh.load returns a Scene for multi-mesh STLs and a Trimesh otherwise;
+        # `force='mesh'` collapses scenes into a single mesh so the export below
+        # always succeeds. `process=False` preserves vertex order so the label
+        # array we get back from TGN aligns 1:1 with the OBJ vertices.
+        if ext == '.obj':
+            input_file = uploaded
+        elif ext == '.stl':
+            try:
+                import trimesh
+            except ImportError:
+                raise RuntimeError("trimesh not installed in main venv — pip install trimesh")
+            obj_path = tmp / "input.obj"
+            try:
+                mesh = trimesh.load(str(uploaded), force='mesh', process=False)
+            except Exception as load_err:
+                raise RuntimeError(f"Failed to read STL {filename!r}: {load_err}") from load_err
+            if mesh is None or not hasattr(mesh, 'vertices') or len(getattr(mesh, 'vertices', [])) == 0:
+                raise RuntimeError(f"STL {filename!r} parsed to an empty mesh (binary STL header may be malformed)")
+            mesh.export(str(obj_path), file_type='obj')
+            input_file = obj_path
+        else:
+            raise ValueError(f"Unsupported scan extension {ext!r}; expected .obj or .stl")
+
+        # TGN expects: input_dir/{casename}/{casename}_{arch}.obj  +  split.txt with casename per line
+        casename    = "scan"
+        full_name   = f"{casename}_{arch}"
+        input_dir   = tmp / "input"
+        scan_subdir = input_dir / casename
+        scan_subdir.mkdir(parents=True)
+        shutil.copy(str(input_file), str(scan_subdir / f"{full_name}.obj"))
+
+        split_txt = tmp / "split.txt"
+        split_txt.write_text(f"{casename}\n")
+
+        output_dir = tmp / "output"
+        output_dir.mkdir()
+
+        # Env vars for TGN subprocess (CUDA libs from TGN venv + system CUDA)
+        site_pkgs = TGN_VENV_PATH / 'lib' / 'python3.11' / 'site-packages'
+        ld_paths = [str(site_pkgs / 'torch' / 'lib')]
+        for sub in ['cu13', 'cudnn', 'cublas', 'cusparse', 'cusolver', 'cufft', 'curand', 'nccl']:
+            p = site_pkgs / 'nvidia' / sub / 'lib'
+            if p.exists():
+                ld_paths.append(str(p))
+        ld_paths.append('/usr/local/cuda-13.0/lib64')
+
+        env = {
+            **os.environ,
+            "CUDA_VISIBLE_DEVICES": "0",
+            "LD_LIBRARY_PATH":      ":".join(ld_paths) + ":" + os.environ.get("LD_LIBRARY_PATH", ""),
+        }
+
+        cmd = [
+            _tgn_python(),
+            str(TGN_REPO_PATH / "start_inference.py"),
+            "--input_dir_path",      str(input_dir),
+            "--split_txt_path",      str(split_txt),
+            "--save_path",           str(output_dir),
+            "--model_name",          "tgnet",
+            "--checkpoint_path",     "ckpts/tgnet_fps",
+            "--checkpoint_path_bdl", "ckpts/tgnet_bdl",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=str(TGN_REPO_PATH))
+        if result.returncode != 0:
+            print(f"[tooth-seg] stderr:\n{result.stderr[-1500:]}")
+            raise RuntimeError(f"TGN inference failed: {result.stderr[-400:]}")
+
+        # Locate output JSON
+        out_json = output_dir / f"{full_name}.json"
+        if not out_json.exists():
+            cands = list(output_dir.glob("*.json"))
+            if not cands:
+                raise RuntimeError("TGN produced no output JSON")
+            out_json = cands[0]
+
+        data = json.loads(out_json.read_text())
+        if isinstance(data, list):
+            labels = data
+        else:
+            labels = data.get("labels") or data.get("pred") or []
+
+        # Load the OBJ vertices in the SAME order TGN sees them and compute measurements
+        # process=False + force='mesh' preserves vertex order from the OBJ file → labels align 1:1
+        measurements: dict = {}
+        try:
+            import trimesh
+            mesh_obj = trimesh.load(
+                str(scan_subdir / f"{full_name}.obj"),
+                process=False,
+                force='mesh',
+            )
+            mesh_verts = np.asarray(mesh_obj.vertices, dtype=np.float64)
+            if len(mesh_verts) == len(labels):
+                measurements = _compute_measurements(mesh_verts, labels, arch)
+            else:
+                measurements = {
+                    'error': f'vertex/label count mismatch '
+                             f'(mesh={len(mesh_verts)}, labels={len(labels)})',
+                }
+        except Exception as e:
+            measurements = {'error': f'measurement load failed: {e}'}
+
+    elapsed = round(time.perf_counter() - t0, 2)
+    label_summary: dict = {}
+    for lbl in labels:
+        k = str(lbl)
+        label_summary[k] = label_summary.get(k, 0) + 1
+
+    return {
+        "labels":            labels,
+        "vertex_count":      len(labels),
+        "label_summary":     label_summary,
+        "model_used":        "ToothGroupNetwork/tgnet",
+        "inference_seconds": elapsed,
+        "measurements":      measurements,
+    }
+
+
+def _process_tooth_seg_job(job_id: str) -> None:
+    """
+    Run TGN tooth segmentation in a background thread, ship the result via webhook,
+    and leave no trace on the TIPs server.
+
+    Lifecycle (matches CBCT):
+      • Download mesh → tempfile.TemporaryDirectory (auto-deletes on exit)
+      • Run TGN subprocess → output JSON in same tempdir (auto-deletes)
+      • Build result dict + measurements → in-memory
+      • Compress to ZIP → io.BytesIO (in-memory, GC'd after upload)
+      • Upload ZIP to NestJS /api/v1/reports → returns report_link
+      • Send webhook with report_link → NestJS unzips and stores
+      • Remove _jobs[job_id] → no residual job metadata
+    """
+    with _jobs_lock:
+        job = _jobs[job_id]
+        job['status']  = 'running'
+        job['stage']   = 'running'
+        job['started'] = time.time()
+
+    t0 = time.time()
+    ai_report_id = job['ai_report_id']
+    try:
+        media_url = job['media_url']
+        arch      = job.get('arch', 'upper')
+        filename  = Path(media_url).name or 'scan.obj'
+        print(f"[tooth-seg] job {job_id[:8]} fetching {media_url} (arch={arch})")
+
+        file_bytes = _fetch_bytes_sync(media_url)
+        result = _run_tgn_inference(file_bytes, filename, arch)
+        result["arch"] = arch
+        elapsed_ms = round((time.time() - t0) * 1000)
+
+        # Upload full result (labels + measurements + metadata) as a ZIP to NestJS.
+        # Returns the report_link URL on NestJS storage; nothing is stored locally.
+        report_link = _save_opg_report(result, ai_report_id)
+
+        webhook_payload: dict = {
+            "ai_report_id": ai_report_id,
+            "report_type":  "file",
+            "status":       "completed",
+            "report_link":  report_link,
+            "metadata": {
+                "processing_time_ms":  elapsed_ms,
+                "model_version":       "ToothGroupNetwork/tgnet",
+                "arch":                arch,
+                "vertex_count":        result["vertex_count"],
+                "inference_seconds":   result["inference_seconds"],
+                "label_summary":       result["label_summary"],
+                # Compact measurement summary in metadata; full data lives in the ZIP
+                "measurements_summary": _meas_summary(result.get("measurements")),
+                "detected_conditions": [f"tooth-seg-{arch}"],
+            },
+            "error_message": None,
+        }
+        _send_webhook(webhook_payload)
+        print(f"[tooth-seg] job {job_id[:8]} done in {result['inference_seconds']}s — {result['vertex_count']} vertices")
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[tooth-seg] ERROR job {job_id[:8]}: {e}\n{tb}")
+        _send_webhook({
+            "ai_report_id":  ai_report_id,
+            "report_type":   "file",
+            "status":        "failed",
+            "error_message": str(e),
+        })
+
+    finally:
+        # Drop the in-memory job entry — TIPs holds no state for this job after webhook
+        with _jobs_lock:
+            _jobs.pop(job_id, None)
+
+
+def _meas_summary(m) -> dict:
+    """Compact subset of measurements suitable for webhook metadata (no per-vertex data)."""
+    if not isinstance(m, dict) or m.get('error'):
+        return {}
+    return {
+        'teeth_detected':       m.get('teeth_detected'),
+        'arch_length_mm':       m.get('arch_length_mm'),
+        'intercanine_width_mm': m.get('intercanine_width_mm'),
+        'intermolar_width_mm':  m.get('intermolar_width_mm'),
+        'crowding_mm':          m.get('crowding_mm'),
+    }
 
 
 def _process_job(job_id: str) -> None:
@@ -2221,9 +2942,11 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # ── inference endpoints ───────────────────────────────────────────────────────
 
 class InferRequest(BaseModel):
-    ai_report_id: int          # NestJS AiMediaReport.id — echoed back in webhook
-    media_type:   _MediaType   # 'OPG_XRAY' | 'CBCT_3D'
-    media_url:    str          # relative asset path or full http(s) URL
+    ai_report_id: int                    # NestJS AiMediaReport.id — echoed back in webhook
+    media_type:   _MediaType             # 'OPG_XRAY' | 'CBCT_3D' | 'CEPHALOMETRIC_XRAY' | 'IOS_SCAN'
+    media_url:    str                    # relative asset path or full http(s) URL
+    pixel_size:   Optional[float] = None # mm/px for cephalometric (default 0.100)
+    arch:         Optional[str]   = None # 'upper' | 'lower' — required for IOS_SCAN
 
 
 @app.post("/infer", dependencies=[Depends(_verify_token)])
@@ -2278,6 +3001,49 @@ async def infer(req: InferRequest):
             }
         _job_queue.put(job_id)
         return {"job_id": job_id, "status": "queued"}
+
+    # ── IOS_SCAN: async ToothGroupNetwork inference → webhook ────────────────
+    if req.media_type == _MediaType.IOS_SCAN:
+        arch = (req.arch or 'upper').lower()
+        if arch not in ('upper', 'lower'):
+            raise HTTPException(400, "arch must be 'upper' or 'lower' for IOS_SCAN")
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            _jobs[job_id] = {
+                'job_id':        job_id,
+                'ai_report_id':  req.ai_report_id,
+                'media_type':    req.media_type.value,
+                'media_url':     str(req.media_url),
+                'arch':          arch,
+                'status':        'queued',
+                'stage':         'queued',
+                'queued':        time.time(),
+                'elapsed_s':     None,
+                'error':         None,
+            }
+        threading.Thread(target=_process_tooth_seg_job, args=(job_id,), daemon=True).start()
+        return JSONResponse({"job_id": job_id, "status": "queued"})
+
+    # ── Cephalometric: async HRNet via background thread → webhook ───────────
+    if req.media_type == _MediaType.CEPHALOMETRIC_XRAY:
+        if _load_ceph_model() is None:
+            raise HTTPException(503, "Cephalometric model weights not found")
+        job_id = str(uuid.uuid4())
+        with _jobs_lock:
+            _jobs[job_id] = {
+                'job_id':        job_id,
+                'ai_report_id':  req.ai_report_id,
+                'media_type':    req.media_type.value,
+                'media_url':     str(req.media_url),
+                'pixel_size':    getattr(req, 'pixel_size', None),
+                'status':        'queued',
+                'stage':         'queued',
+                'queued':        time.time(),
+                'elapsed_s':     None,
+                'error':         None,
+            }
+        threading.Thread(target=_process_ceph_job, args=(job_id,), daemon=True).start()
+        return JSONResponse({"job_id": job_id, "status": "queued"})
 
     raise HTTPException(422, f"media_type '{req.media_type.value}' is not yet supported")
 
