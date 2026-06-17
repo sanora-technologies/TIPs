@@ -206,7 +206,7 @@ def _apply_gpu_resampling_patch() -> None:
 
 # ── constants ──────────────────────────────────────────────────────────────────
 REPO_ROOT   = Path(__file__).resolve().parent
-VENV_BIN    = Path("/home/oaiz/envs/server_env_3.11") / "bin"
+VENV_BIN    = Path(os.environ.get('TIPS_VENV_BIN', str(REPO_ROOT / "venv" / "bin")))
 PYTHON      = str(VENV_BIN / "python")
 POSTPROCESS = REPO_ROOT / "toothseg" / "toothseg" / "postprocess_predictions"
 UI_STATIC   = REPO_ROOT / "ui" / "static"
@@ -287,13 +287,99 @@ BACKEND_ASSETS_PATH = os.environ.get('BACKEND_ASSETS_PATH', '')            # loc
 TGN_REPO_PATH = Path(os.environ.get('TGN_REPO_PATH', str(REPO_ROOT / 'ToothGroupNetwork')))
 TGN_VENV_PATH = Path(os.environ.get('TGN_VENV_PATH', str(REPO_ROOT / 'ToothGroupNetwork' / 'venv_tgn')))
 
+# Shared keep-alive HTTP client for media downloads. Creating a fresh httpx client per
+# request pays a full DNS + TCP + TLS handshake (~0.5s to S3 eu-north-1) every time;
+# a pooled client reuses the connection so back-to-back fetches skip the handshake.
+_http_client = httpx.Client(
+    timeout=httpx.Timeout(120.0, connect=10.0),
+    headers={"User-Agent": "Mozilla/5.0"},
+    follow_redirects=True,
+    limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=120.0),
+)
+
+# Object storage drops idle connections sooner than keepalive_expiry, yielding truncated
+# bodies on the next reuse. Retry transient download failures with exponential backoff.
+_FETCH_RETRIES = int(os.environ.get('MEDIA_FETCH_RETRIES', '4'))
+
 def _verify_token(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
     if creds.credentials != _OPG_API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing token")
 
-# Load YOLO models once (fast — no GPU warmup needed)
+# Pick an inference device once. Ultralytics defaults a freshly-loaded YOLO model to
+# CPU; on a busy server (jemalloc + concurrent CBCT/TGN jobs) two CPU YOLO passes turn
+# a ~2-5s OPG job into 20-60s. Pin to GPU when CUDA is present, fall back to CPU.
+try:
+    import torch as _torch
+    _YOLO_DEVICE = 0 if _torch.cuda.is_available() else "cpu"
+except Exception:
+    _YOLO_DEVICE = "cpu"
+
+# Load YOLO models once and move them onto the inference device up front so the first
+# request doesn't pay a load/transfer penalty.
 _opg_model   = YOLO(str(OPG_WEIGHTS))   if OPG_WEIGHTS.exists()   else None
 _teeth_model = YOLO(str(TEETH_WEIGHTS)) if TEETH_WEIGHTS.exists() else None
+if _YOLO_DEVICE != "cpu":
+    for _m in (_opg_model, _teeth_model):
+        if _m is not None:
+            try:
+                _m.to(f"cuda:{_YOLO_DEVICE}")
+            except Exception as _e:
+                print(f"[server] WARN: could not move YOLO model to GPU ({_e}); using CPU")
+                _YOLO_DEVICE = "cpu"
+print(f"[server] YOLO inference device: {_YOLO_DEVICE}")
+
+# Fixed inference canvas for the YOLO models. On Blackwell GPUs (RTX 50xx) cuDNN
+# rebuilds its conv kernels for every NEW input tensor shape — a ~35s one-time cost
+# *per distinct letterboxed shape*. Ultralytics letterboxes preserving aspect ratio,
+# so each differently-proportioned radiograph hit a fresh shape and paid 35s again.
+# Mirror the cephalometric path (CEPH_INPUT_SIZE): letterbox every image into ONE
+# fixed square canvas so the model always sees the same shape → kernels compile once
+# (absorbed by the startup warmup below) and every real job is then ~0.02s.
+OPG_INPUT_SIZE   = 736
+TEETH_INPUT_SIZE = 896
+
+
+def _letterbox(img: np.ndarray, size: int) -> tuple[np.ndarray, float, int, int]:
+    """Resize img into a fixed size×size canvas, preserving aspect ratio with
+    centered zero padding. Returns (canvas, scale, pad_left, pad_top) so detection
+    boxes can be mapped back to original-image coordinates."""
+    h, w = img.shape[:2]
+    scale = size / max(h, w)
+    nh, nw = round(h * scale), round(w * scale)
+    resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
+    canvas = np.zeros((size, size, 3), dtype=img.dtype)
+    pad_top, pad_left = (size - nh) // 2, (size - nw) // 2
+    canvas[pad_top:pad_top + nh, pad_left:pad_left + nw] = resized
+    return canvas, scale, pad_left, pad_top
+
+
+def _unletterbox_dets(dets: list, scale: float, pad_left: int, pad_top: int) -> list:
+    """Map bbox coords from the letterboxed canvas back to the original image."""
+    for d in dets:
+        b = d["bbox"]
+        b["x1"] = round((b["x1"] - pad_left) / scale, 2)
+        b["y1"] = round((b["y1"] - pad_top)  / scale, 2)
+        b["x2"] = round((b["x2"] - pad_left) / scale, 2)
+        b["y2"] = round((b["y2"] - pad_top)  / scale, 2)
+    return dets
+
+
+def _warmup_yolo() -> None:
+    """Pay the one-time per-shape cuDNN kernel-build cost at startup (on the fixed
+    canvas size) so the first real patient job doesn't eat ~35s."""
+    if _opg_model is None and _teeth_model is None:
+        return
+    try:
+        t0 = time.time()
+        if _opg_model is not None:
+            _opg_model.predict(np.zeros((OPG_INPUT_SIZE, OPG_INPUT_SIZE, 3), np.uint8),
+                               imgsz=OPG_INPUT_SIZE, device=_YOLO_DEVICE, verbose=False)
+        if _teeth_model is not None:
+            _teeth_model.predict(np.zeros((TEETH_INPUT_SIZE, TEETH_INPUT_SIZE, 3), np.uint8),
+                                 imgsz=TEETH_INPUT_SIZE, device=_YOLO_DEVICE, verbose=False)
+        print(f"[server] YOLO warmup done in {time.time() - t0:.1f}s")
+    except Exception as _e:
+        print(f"[server] WARN: YOLO warmup failed ({_e})")
 
 # ── Cephalometric (HRNet) constants ───────────────────────────────────────────
 
@@ -445,8 +531,7 @@ def _fetch_image_sync(url: str) -> np.ndarray:
             raise RuntimeError("Cannot resolve relative URL: set BACKEND_BASE_URL or BACKEND_ASSETS_PATH")
 
     try:
-        resp = httpx.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"},
-                         follow_redirects=True)
+        resp = _http_client.get(url)
         resp.raise_for_status()
     except Exception as e:
         raise RuntimeError(f"Failed to fetch media: {e}")
@@ -503,16 +588,66 @@ def _send_webhook(payload: dict) -> None:
 
 def _upload_report_zip(zip_bytes: bytes, filename: str, ai_report_id: Optional[int] = None) -> Optional[str]:
     """
-    POST a report ZIP to the NestJS backend (POST /api/v1/reports?ai_report_id=<id>).
-    Returns the report_link string from the JSON response, or None on failure.
-    Used when BACKEND_API_URL is set (remote / ngrok mode).
+    Upload a report ZIP to the NestJS backend.
+
+    Primary path (S3 mode): request a presigned S3 PUT URL from NestJS, then PUT
+    the ZIP bytes directly to S3 — bypasses nginx entirely, no 413 errors.
+
+    Fallback (local storage mode): POST the file as multipart directly to NestJS.
+    This is used when the presigned-URL endpoint returns 400 (S3 not configured).
+
+    Returns the filePath/report_link on success, None on failure.
     """
-    upload_url = f"{BACKEND_API_URL}/reports"
+    if not BACKEND_API_URL:
+        return None
+
+    # ── Presigned URL path (S3 storage) ─────────────────────────────────────
     if ai_report_id is not None:
-        upload_url = f"{upload_url}?ai_report_id={ai_report_id}"
+        try:
+            presigned_resp = httpx.post(
+                f"{BACKEND_API_URL}/reports/presigned-url?ai_report_id={ai_report_id}",
+                json={"fileSize": len(zip_bytes)},
+                headers={"Authorization": f"Bearer {_OPG_API_TOKEN}", "Content-Type": "application/json"},
+                timeout=30,
+            )
+            presigned_resp.raise_for_status()
+            pdata = presigned_resp.json()
+            s3_put_url = pdata.get("uploadUrl")
+            file_path   = pdata.get("filePath")
+
+            if s3_put_url and file_path:
+                put_resp = httpx.put(
+                    s3_put_url,
+                    content=zip_bytes,
+                    # x-amz-acl must match the ACL the backend signed into the presigned
+                    # URL, or Linode rejects with SignatureDoesNotMatch. Makes the report
+                    # publicly viewable (Linode E2/E3 has no bucket policy).
+                    headers={"Content-Type": "application/zip", "x-amz-acl": "public-read"},
+                    timeout=300,  # 5 min for large ZIPs
+                )
+                put_resp.raise_for_status()
+                print(f'[webhook] Report uploaded via presigned URL → {file_path}  ({len(zip_bytes) / 1e6:.2f} MB)')
+                return file_path
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (400, 404):
+                # 400: backend is in local storage mode (S3 not configured)
+                # 404: presigned-url endpoint not deployed yet — fall through to direct upload
+                print(f'[webhook] Presigned URL not available (HTTP {e.response.status_code}) — falling back to direct upload')
+            else:
+                print(f'[webhook] Upload failed: {e}')
+                return None
+        except Exception as e:
+            print(f'[webhook] Upload failed: {e}')
+            return None
+
+    # ── Direct multipart fallback (local storage mode) ───────────────────────
+    direct_url = f"{BACKEND_API_URL}/reports"
+    if ai_report_id is not None:
+        direct_url = f"{direct_url}?ai_report_id={ai_report_id}"
     try:
         resp = httpx.post(
-            upload_url,
+            direct_url,
             files={"file": (filename, zip_bytes, "application/zip")},
             headers={"Authorization": f"Bearer {_OPG_API_TOKEN}"},
             timeout=120,
@@ -520,19 +655,19 @@ def _upload_report_zip(zip_bytes: bytes, filename: str, ai_report_id: Optional[i
         resp.raise_for_status()
         data = resp.json()
         link = data.get("report_link") or data.get("url") or data.get("path")
-        print(f'[webhook] Report uploaded → {link}  ({len(zip_bytes) / 1e3:.1f} KB)')
+        print(f'[webhook] Report uploaded (direct) → {link}  ({len(zip_bytes) / 1e3:.1f} KB)')
         return link
     except Exception as e:
         print(f'[webhook] Upload failed: {e}')
         return None
 
 
-def _save_opg_report(result: dict, ai_report_id: Optional[int] = None) -> Optional[str]:
+def _save_opg_report(result: dict, ai_report_id: Optional[int] = None) -> tuple[Optional[str], int]:
     """
-    Serialize OPG result to JSON, compress into a ZIP, then:
-      - Remote mode (BACKEND_API_URL set): upload via HTTP and return report_link.
+    Serialize OPG/ceph/tooth-seg result to JSON, compress into a ZIP, then:
+      - Remote mode (BACKEND_API_URL set): upload via presigned URL (S3) or direct POST (local).
       - Local  mode (BACKEND_ASSETS_PATH set): write to assets/reports/ folder.
-    Returns None when neither is configured.
+    Returns (report_link, zip_size_bytes). report_link is None on failure or missing config.
     """
     timestamp = str(int(time.time() * 1_000_000))
     filename  = f"{timestamp}.zip"
@@ -543,24 +678,24 @@ def _save_opg_report(result: dict, ai_report_id: Optional[int] = None) -> Option
     zip_bytes = buf.getvalue()
 
     if BACKEND_API_URL:
-        return _upload_report_zip(zip_bytes, filename, ai_report_id)
+        return _upload_report_zip(zip_bytes, filename, ai_report_id), len(zip_bytes)
 
     if not BACKEND_ASSETS_PATH:
-        return None
+        return None, len(zip_bytes)
     reports_dir = Path(BACKEND_ASSETS_PATH) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     dest = reports_dir / filename
     dest.write_bytes(zip_bytes)
     print(f'[webhook] OPG report saved → {dest} ({len(zip_bytes) / 1e3:.1f} KB)')
-    return f"reports/{filename}"
+    return f"reports/{filename}", len(zip_bytes)
 
 
-def _save_cbct_report(case_name: str, cache_path: Path, ai_report_id: Optional[int] = None) -> Optional[str]:
+def _save_cbct_report(case_name: str, cache_path: Path, ai_report_id: Optional[int] = None) -> tuple[Optional[str], int]:
     """
     Compress the CBCT result JSON into a ZIP, then:
-      - Remote mode (BACKEND_API_URL set): upload via HTTP and return report_link.
+      - Remote mode (BACKEND_API_URL set): upload via presigned URL (S3) or direct POST (local).
       - Local  mode (BACKEND_ASSETS_PATH set): write to assets/reports/ folder.
-    Returns None when neither is configured.
+    Returns (report_link, zip_size_bytes). report_link is None on failure or missing config.
     """
     timestamp = str(int(time.time() * 1_000_000))
     filename  = f"{timestamp}.zip"
@@ -570,16 +705,16 @@ def _save_cbct_report(case_name: str, cache_path: Path, ai_report_id: Optional[i
     zip_bytes = buf.getvalue()
 
     if BACKEND_API_URL:
-        return _upload_report_zip(zip_bytes, filename, ai_report_id)
+        return _upload_report_zip(zip_bytes, filename, ai_report_id), len(zip_bytes)
 
     if not BACKEND_ASSETS_PATH:
-        return None
+        return None, len(zip_bytes)
     reports_dir = Path(BACKEND_ASSETS_PATH) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
     dest = reports_dir / filename
     dest.write_bytes(zip_bytes)
     print(f'[webhook] CBCT report saved → {dest} ({len(zip_bytes) / 1e6:.1f} MB)')
-    return f"reports/{filename}"
+    return f"reports/{filename}", len(zip_bytes)
 
 
 def _font_scale(img: np.ndarray, base: float = 0.6) -> float:
@@ -807,6 +942,9 @@ def load_all_models(device_str: str = 'cuda') -> None:
     print(f'[server] All models on GPU in {time.time()-t0:.1f}s  '
           f'(VRAM used: {used:.2f} / {total:.1f} GB)')
     print('[server] ─────────────────────────────────────────────────────────\n')
+    # Warm up the YOLO models AFTER nnUNet load — loading nnUNet triggers a one-time
+    # per-shape cuDNN kernel build that otherwise lands on the first OPG job (~35s).
+    _warmup_yolo()
     _models_ready.set()
 
 # ── inference helpers ──────────────────────────────────────────────────────────
@@ -1913,6 +2051,14 @@ _job_queue: "queue.Queue[str]" = queue.Queue()
 _jobs: Dict[str, Dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 
+# GPU scheduling. The CBCT 3-D pipeline (nnUNet UMamba) and the TGN point-cloud subprocess
+# each load multi-GB models; running two heavy jobs on one card risks a CUDA OOM that kills a
+# job mid-run. They share this semaphore so only HEAVY_GPU_CONCURRENCY of them touch the GPU
+# at once (default 1 = strictly serialized). Downloads happen OUTSIDE the semaphore, so a fast
+# OPG/ceph job — which uses small resident models and is never gated — never waits, and a TGN
+# scan's network fetch overlaps with a running CBCT instead of blocking on it.
+_HEAVY_GPU_SEM = threading.BoundedSemaphore(int(os.environ.get('HEAVY_GPU_CONCURRENCY', '1')))
+
 _UPLOADS = REPO_ROOT / "uploads"
 _UPLOADS.mkdir(exist_ok=True)
 
@@ -2151,7 +2297,8 @@ def _process_ceph_job(job_id: str) -> None:
             elif _nm == "overjet":  _ceph_compact["overjet"]   = m["value"]
             elif _nm == "overbite": _ceph_compact["overbite"]  = m["value"]
 
-        report_link = _save_opg_report(ceph_result, job['ai_report_id'])
+        report_link, zip_size = _save_opg_report(ceph_result, job['ai_report_id'])
+        upload_failed = bool(BACKEND_API_URL) and report_link is None
 
         with _jobs_lock:
             job['status']    = 'done'
@@ -2161,16 +2308,17 @@ def _process_ceph_job(job_id: str) -> None:
         webhook_payload: dict = {
             "ai_report_id":  job['ai_report_id'],
             "report_type":   "file",
-            "status":        "completed",
+            "status":        "failed" if upload_failed else "completed",
             "report_link":   report_link,
             "metadata": {
                 "processing_time_ms":  elapsed_ms,
                 "model_version":       "hrnet-w32-ceph",
                 "confidence_score":    1.0,
                 "detected_conditions": [ceph_result.get("skeletal_class", "")],
+                "report_file_size":    zip_size,
                 **_ceph_compact,
             },
-            "error_message": None,
+            "error_message": "Report upload failed — file could not be stored" if upload_failed else None,
         }
         _send_webhook(webhook_payload)
 
@@ -2203,10 +2351,17 @@ def _process_opg_job(job_id: str) -> None:
         print(f'Media url for OPG job {job_id[:8]}: {job["media_url"]}')
         img = _fetch_image_sync(job['media_url'])
 
-        opg_dets   = _parse_yolo_results(
-            _opg_model.predict(img,   imgsz=736, conf=0.25, iou=0.7, max_det=300), OPG_CLASSES)
-        teeth_dets = _parse_yolo_results(
-            _teeth_model.predict(img, imgsz=896, conf=0.25, iou=0.7, max_det=300), TEETH_CLASSES)
+        # Letterbox into a fixed canvas (one constant shape → no per-image cuDNN
+        # recompile), run inference, then map boxes back to original coordinates.
+        opg_lb,   o_s, o_pl, o_pt = _letterbox(img, OPG_INPUT_SIZE)
+        teeth_lb, t_s, t_pl, t_pt = _letterbox(img, TEETH_INPUT_SIZE)
+
+        opg_dets   = _unletterbox_dets(_parse_yolo_results(
+            _opg_model.predict(opg_lb,   imgsz=OPG_INPUT_SIZE, conf=0.25, iou=0.7, max_det=300,
+                               device=_YOLO_DEVICE, verbose=False), OPG_CLASSES), o_s, o_pl, o_pt)
+        teeth_dets = _unletterbox_dets(_parse_yolo_results(
+            _teeth_model.predict(teeth_lb, imgsz=TEETH_INPUT_SIZE, conf=0.25, iou=0.7, max_det=300,
+                                 device=_YOLO_DEVICE, verbose=False), TEETH_CLASSES), t_s, t_pl, t_pt)
 
         matched   = _match_diseases_to_teeth(opg_dets, teeth_dets)
         annotated = _draw_disease_boxes(_draw_teeth_numbers(img.copy(), teeth_dets), matched)
@@ -2245,7 +2400,8 @@ def _process_opg_job(job_id: str) -> None:
             "image_width":        img.shape[1],
             "image_height":       img.shape[0],
         }
-        report_link = _save_opg_report(opg_result, job['ai_report_id'])
+        report_link, zip_size = _save_opg_report(opg_result, job['ai_report_id'])
+        upload_failed = bool(BACKEND_API_URL) and report_link is None
 
         with _jobs_lock:
             job['status']    = 'done'
@@ -2255,7 +2411,7 @@ def _process_opg_job(job_id: str) -> None:
         webhook_payload: dict = {
             "ai_report_id":  job['ai_report_id'],
             "report_type":   "file",
-            "status":        "completed",
+            "status":        "failed" if upload_failed else "completed",
             "report_link":   report_link,
             "metadata": {
                 "processing_time_ms":  elapsed_ms,
@@ -2264,8 +2420,9 @@ def _process_opg_job(job_id: str) -> None:
                     sum(t["confidence"] for t in teeth_dets) / len(teeth_dets), 4
                 ) if teeth_dets else 0.0,
                 "detected_conditions": list({d["class_name"] for d in matched}),
+                "report_file_size":    zip_size,
             },
-            "error_message": None,
+            "error_message": "Report upload failed — file could not be stored" if upload_failed else None,
         }
         _send_webhook(webhook_payload)
 
@@ -2301,9 +2458,29 @@ def _fetch_bytes_sync(url: str) -> bytes:
             return local_path.read_bytes()
         else:
             raise RuntimeError("Cannot resolve relative URL: set BACKEND_BASE_URL or BACKEND_ASSETS_PATH")
-    resp = httpx.get(url, timeout=120, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True)
-    resp.raise_for_status()
-    return resp.content
+    # Linode/S3 object storage occasionally closes a (stale keep-alive) socket mid-body,
+    # raising RemoteProtocolError "peer closed connection ... expected N bytes". These are
+    # transient — a retry grabs a fresh connection. Validate the body length against
+    # Content-Length so a silent truncation is caught rather than fed to inference.
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, _FETCH_RETRIES + 1):
+        try:
+            with _http_client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                expected = resp.headers.get("Content-Length")
+                data = resp.read()
+            if expected is not None and len(data) != int(expected):
+                raise httpx.RemoteProtocolError(
+                    f"truncated body: received {len(data)} bytes, expected {expected}")
+            return data
+        except (httpx.TransportError, httpx.RemoteProtocolError) as e:
+            last_exc = e
+            if attempt < _FETCH_RETRIES:
+                backoff = min(2 ** (attempt - 1), 10)
+                print(f"[fetch] attempt {attempt}/{_FETCH_RETRIES} failed for {url} "
+                      f"({e}); retrying in {backoff}s", flush=True)
+                time.sleep(backoff)
+    raise RuntimeError(f"failed to fetch {url} after {_FETCH_RETRIES} attempts: {last_exc}") from last_exc
 
 
 def _tgn_python() -> str:
@@ -2601,10 +2778,25 @@ def _run_tgn_inference(file_bytes: bytes, filename: str, arch: str) -> dict:
             "--checkpoint_path",     "ckpts/tgnet_fps",
             "--checkpoint_path_bdl", "ckpts/tgnet_bdl",
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=str(TGN_REPO_PATH))
-        if result.returncode != 0:
-            print(f"[tooth-seg] stderr:\n{result.stderr[-1500:]}")
-            raise RuntimeError(f"TGN inference failed: {result.stderr[-400:]}")
+        # Stream the TGN subprocess output line-by-line so it shows up live in the
+        # journal (capture_output=True would swallow it and only surface it on error).
+        # We still keep the last N lines of stderr for the failure message.
+        env["PYTHONUNBUFFERED"] = "1"
+        print(f"[tooth-seg] launching TGN inference: {' '.join(cmd)}", flush=True)
+        proc = subprocess.Popen(
+            cmd, env=env, cwd=str(TGN_REPO_PATH), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
+        )
+        tail = []
+        for line in proc.stdout:
+            line = line.rstrip()
+            print(f"[tgn] {line}", flush=True)
+            tail.append(line)
+            if len(tail) > 50:
+                tail.pop(0)
+        returncode = proc.wait()
+        if returncode != 0:
+            raise RuntimeError("TGN inference failed:\n" + "\n".join(tail[-20:]))
 
         # Locate output JSON
         out_json = output_dir / f"{full_name}.json"
@@ -2686,18 +2878,25 @@ def _process_tooth_seg_job(job_id: str) -> None:
         print(f"[tooth-seg] job {job_id[:8]} fetching {media_url} (arch={arch})")
 
         file_bytes = _fetch_bytes_sync(media_url)
-        result = _run_tgn_inference(file_bytes, filename, arch)
+        # Heavy GPU work — serialize against CBCT (and other TGN scans) to avoid CUDA OOM.
+        with _jobs_lock:
+            _jobs[job_id]['stage'] = 'waiting for GPU'
+        with _HEAVY_GPU_SEM:
+            with _jobs_lock:
+                _jobs[job_id]['stage'] = 'running'
+            result = _run_tgn_inference(file_bytes, filename, arch)
         result["arch"] = arch
         elapsed_ms = round((time.time() - t0) * 1000)
 
         # Upload full result (labels + measurements + metadata) as a ZIP to NestJS.
         # Returns the report_link URL on NestJS storage; nothing is stored locally.
-        report_link = _save_opg_report(result, ai_report_id)
+        report_link, zip_size = _save_opg_report(result, ai_report_id)
+        upload_failed = bool(BACKEND_API_URL) and report_link is None
 
         webhook_payload: dict = {
             "ai_report_id": ai_report_id,
             "report_type":  "file",
-            "status":       "completed",
+            "status":       "failed" if upload_failed else "completed",
             "report_link":  report_link,
             "metadata": {
                 "processing_time_ms":  elapsed_ms,
@@ -2706,15 +2905,14 @@ def _process_tooth_seg_job(job_id: str) -> None:
                 "vertex_count":        result["vertex_count"],
                 "inference_seconds":   result["inference_seconds"],
                 "label_summary":       result["label_summary"],
-                # Compact measurement summary in metadata; full data lives in the ZIP
                 "measurements_summary": _meas_summary(result.get("measurements")),
                 "detected_conditions": [f"tooth-seg-{arch}"],
+                "report_file_size":    zip_size,
             },
-            "error_message": None,
+            "error_message": "Report upload failed — file could not be stored" if upload_failed else None,
         }
         _send_webhook(webhook_payload)
         print(f"[tooth-seg] job {job_id[:8]} done in {result['inference_seconds']}s — {result['vertex_count']} vertices")
-
     except Exception as e:
         tb = traceback.format_exc()
         print(f"[tooth-seg] ERROR job {job_id[:8]}: {e}\n{tb}")
@@ -2775,19 +2973,50 @@ def _process_job(job_id: str) -> None:
                 media_url = BACKEND_BASE_URL + '/' + media_url.lstrip('/')
             _set_stage('Downloading scan…')
             print(f'[server] Downloading {media_url} → {zip_path.name}')
-            with httpx.stream('GET', media_url, timeout=300,
-                              headers={'User-Agent': 'Mozilla/5.0'},
-                              follow_redirects=True) as _dl:
-                _dl.raise_for_status()
-                with open(str(zip_path), 'wb') as _f:
-                    for _chunk in _dl.iter_bytes(chunk_size=1024 * 1024):
-                        _f.write(_chunk)
+            _last_exc: Optional[Exception] = None
+            for _attempt in range(1, _FETCH_RETRIES + 1):
+                try:
+                    with httpx.stream('GET', media_url, timeout=300,
+                                      headers={'User-Agent': 'Mozilla/5.0'},
+                                      follow_redirects=True) as _dl:
+                        _dl.raise_for_status()
+                        _expected = _dl.headers.get('Content-Length')
+                        with open(str(zip_path), 'wb') as _f:
+                            for _chunk in _dl.iter_bytes(chunk_size=1024 * 1024):
+                                _f.write(_chunk)
+                    _got = zip_path.stat().st_size
+                    if _expected is not None and _got != int(_expected):
+                        raise httpx.RemoteProtocolError(
+                            f"truncated body: received {_got} bytes, expected {_expected}")
+                    _last_exc = None
+                    break
+                except (httpx.TransportError, httpx.RemoteProtocolError) as _e:
+                    _last_exc = _e
+                    zip_path.unlink(missing_ok=True)   # drop the partial file before retrying
+                    if _attempt < _FETCH_RETRIES:
+                        _backoff = min(2 ** (_attempt - 1), 10)
+                        print(f'[server]   download attempt {_attempt}/{_FETCH_RETRIES} failed '
+                              f'({_e}); retrying in {_backoff}s', flush=True)
+                        time.sleep(_backoff)
+            if _last_exc is not None:
+                raise RuntimeError(
+                    f"download failed after {_FETCH_RETRIES} attempts: {_last_exc}") from _last_exc
         print(f'[server]   scan ready ({zip_path.stat().st_size / 1e6:.1f} MB)')
     except Exception as exc:
+        # Previously this branch was silent (no log, no webhook), so a failed CBCT download
+        # left the backend waiting forever — "sent but never diagnosed". Mirror the main
+        # error handler: log it and notify the backend so the report is marked failed.
+        print(f'[server] ERROR job {job_id[:8]}: Download failed: {exc}', flush=True)
         with _jobs_lock:
             _jobs[job_id]['status']  = 'error'
             _jobs[job_id]['stage']   = 'error'
             _jobs[job_id]['error']   = f'Download failed: {exc}'
+        _send_webhook({
+            "ai_report_id":  job.get('ai_report_id'),
+            "report_type":   "file",
+            "status":        "failed",
+            "error_message": f'Download failed: {exc}',
+        })
         return
 
     with _jobs_lock:
@@ -2800,6 +3029,10 @@ def _process_job(job_id: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     workspace = REPO_ROOT / "workspace"
 
+    # Heavy GPU work — serialize against TGN (and any other CBCT) to avoid CUDA OOM. The scan
+    # is already downloaded; only the GPU pipeline is gated, so fast jobs are unaffected.
+    _set_stage('Waiting for GPU…')
+    _HEAVY_GPU_SEM.acquire()
     try:
         t0 = time.time()
         print(f'\n[server] ── Job {job_id[:8]} | {case_name} ──────────────────')
@@ -2872,17 +3105,20 @@ def _process_job(job_id: str) -> None:
             job['result_path'] = str(cache_path)
             job['case']        = case_name
 
-        report_link = _save_cbct_report(case_name, out_dir / "result_cache.json", job['ai_report_id'])
+        report_link, zip_size = _save_cbct_report(case_name, out_dir / "result_cache.json", job['ai_report_id'])
+        upload_failed = bool(BACKEND_API_URL) and report_link is None
+
         webhook_payload: dict = {
             "ai_report_id":  job['ai_report_id'],
             "report_type":   "file",
-            "status":        "completed",
+            "status":        "failed" if upload_failed else "completed",
             "report_link":   report_link,
             "metadata": {
                 "processing_time_ms": round(elapsed * 1000),
                 "model_version":      "nnunet_umamba",
+                "report_file_size":   zip_size,
             },
-            "error_message": None,
+            "error_message": "Report upload failed — file could not be stored" if upload_failed else None,
         }
         _send_webhook(webhook_payload)
 
@@ -2900,6 +3136,8 @@ def _process_job(job_id: str) -> None:
             "status":        "failed",
             "error_message": str(e),
         })
+    finally:
+        _HEAVY_GPU_SEM.release()
 
 
 def _delete_result(job_id: str, out_dir: Path) -> None:

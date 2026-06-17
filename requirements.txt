@@ -1,7 +1,7 @@
 # =====================
 # PyTorch (DO NOT INSTALL HERE)
 # =====================
-# torch installed manually with CUDA wheels into server_env_3.11
+# torch installed manually with CUDA wheels into ./venv (see readme.md Step 3)
 # torchvision installed manually
 # DO NOT add torch or torchvision pins here
 

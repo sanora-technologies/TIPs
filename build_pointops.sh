@@ -1,22 +1,59 @@
 #!/bin/bash
 # Single-shot build script for ToothGroupNetwork's pointops CUDA extension.
-# Run with: bash /home/oaiz/Documents/sanora/Dianexea_stack/TIPs/build_pointops.sh
+# Run with: bash /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/build_pointops.sh
 
 set -e
 
-TGN_DIR="/home/oaiz/Documents/sanora/Dianexea_stack/TIPs/ToothGroupNetwork"
+TGN_DIR="/home/oaiz/Documents/Sanora/dianexea_stack/TIPs/ToothGroupNetwork"
 VENV_DIR="$TGN_DIR/venv_tgn"
 POINTOPS_DIR="$TGN_DIR/external_libs/pointops"
 LOG_FILE="/tmp/pointops_build.log"
 
-# ── CUDA toolkit ──
-export CUDA_HOME=/usr/local/cuda-13.0
+# ── CUDA toolkit (auto-detects whichever cuda-X.Y is selected via update-alternatives) ──
+export CUDA_HOME=/usr/local/cuda
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
-# ── Add bundled CUDA headers from pip nvidia-* packages (system CUDA is missing them) ──
+# ── Sanity-check the CUDA / glibc 2.43 header patch ──
+# On Ubuntu 25.10+ / 26.04 (glibc 2.43+), CUDA 12.8/13.0/13.1's crt/math_functions.h
+# clashes with glibc's bits/mathcalls.h on rsqrt/rsqrtf noexcept declarations.
+# Fix is a 2-line sed patch — see readme.md Step 4a.
+# Refuses to build if the patch hasn't been applied, instead of letting nvcc
+# fail 5 minutes into the compile.
+MATH_H="$CUDA_HOME/include/crt/math_functions.h"
+if ! grep -q 'rsqrt(double x) noexcept(true);' "$MATH_H" 2>/dev/null; then
+    echo "ERROR: $MATH_H has not been patched for glibc 2.43+."
+    echo "       Apply the rsqrt/rsqrtf noexcept patch first — see readme.md Step 4a."
+    echo "       Quick fix:"
+    echo "         sudo sed -i 's/rsqrt(double x);/rsqrt(double x) noexcept(true);/' $MATH_H"
+    echo "         sudo sed -i 's/rsqrtf(float x);/rsqrtf(float x) noexcept(true);/' $MATH_H"
+    exit 1
+fi
+
+# ── Force host compiler to gcc-13 ──
+# Ubuntu 26.04's default g++ is GCC 15. CUDA 12.8's nvcc rejects host gcc > 14
+# with "unsupported GNU version! gcc versions later than 14 are not supported".
+# (Different bug from the rsqrt issue above — that one's a header conflict, this
+# one's nvcc's own version check on the host compiler.)
+if [ -x /usr/bin/g++-13 ]; then
+    export CC=/usr/bin/gcc-13
+    export CXX=/usr/bin/g++-13
+    export CUDAHOSTCXX=/usr/bin/g++-13
+else
+    echo "ERROR: /usr/bin/g++-13 not found. Install with:  sudo apt install -y gcc-13 g++-13"
+    exit 1
+fi
+
+# ── Add header paths for torch's CUDA backend (cusparse.h, cublas.h, cudnn.h, …) ──
+# torch's CUDAContextLight.h includes <cusparse.h>; nvcc's system CUDA install (apt
+# cuda-nvcc-12-8) doesn't ship cusparse/cublas/cudnn headers — only nvcc + runtime.
+# The needed headers come bundled in the pip nvidia-* wheels inside this venv.
 VENV_SITE="$VENV_DIR/lib/python3.11/site-packages"
-NV_INCLUDES="$VENV_SITE/nvidia/cu13/include:$VENV_SITE/nvidia/cudnn/include:$VENV_SITE/nvidia/cublas/include:$VENV_SITE/nvidia/cusparse/include:$VENV_SITE/nvidia/cusolver/include:$VENV_SITE/nvidia/cufft/include:$VENV_SITE/nvidia/curand/include:$VENV_SITE/nvidia/nccl/include"
+NV_INCLUDES=""
+for d in $VENV_SITE/nvidia/*/include; do
+    [ -d "$d" ] && NV_INCLUDES="$NV_INCLUDES:$d"
+done
+NV_INCLUDES="${NV_INCLUDES#:}"  # strip leading colon
 export CPATH="$NV_INCLUDES:${CPATH}"
 export CPLUS_INCLUDE_PATH="$NV_INCLUDES:${CPLUS_INCLUDE_PATH}"
 export C_INCLUDE_PATH="$NV_INCLUDES:${C_INCLUDE_PATH}"

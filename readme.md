@@ -4,10 +4,7 @@ Dental CBCT inference server for: **teeth segmentation, tooth numbering, pulp de
 
 ---
 
-source /home/oaiz/Documents/sanora/Dianexea_stack/TIPs/ToothGroupNetwork/venv_tgn/bin/activate
-
-
-cd /home/oaiz/Documents/sanora/Dianexea_stack/TIPs
+cd /home/oaiz/Documents/Sanora/dianexea_stack/TIPs
 source ToothGroupNetwork/venv_tgn/bin/activate
 python tooth_segmentation_server.py \
   --tgn_repo ./ToothGroupNetwork \
@@ -42,9 +39,12 @@ nvcc --version  # should show 13.0
 
 ## Step 2 — Python Virtual Environment
 
+The TIPs venv lives inside the repo at `./venv` so the project is self-contained.
+
 ```bash
-python3.11 -m venv /home/oaiz/envs/server_env_3.11
-source /home/oaiz/envs/server_env_3.11/bin/activate
+cd /home/oaiz/Documents/Sanora/dianexea_stack/TIPs
+python3.11 -m venv ./venv
+source ./venv/bin/activate
 ```
 
 ---
@@ -67,18 +67,63 @@ python -c "import torch; print(torch.__version__); print(torch.cuda.get_arch_lis
 
 ---
 
-## Step 4 — mamba-ssm (CUDA kernel)
+## Step 4 — mamba-ssm + causal-conv1d (CUDA kernels)
 
-> **Important**: mamba-ssm must be compiled from source against your installed torch.
+> **Important**: both must be compiled from source against your installed torch.
 > Pre-built wheels have ABI mismatches. The `--no-build-isolation` flag is required
 > so the build uses your installed torch instead of downloading a new one.
 
+### Step 4a — Patch CUDA 13.0 header (Ubuntu 25.10+ / 26.04, glibc 2.43+)
+
+> **READ THIS BEFORE BUILDING.** On Ubuntu 26.04 (glibc 2.43) any `.cu` file fails with:
+>
+> ```
+> error: exception specification is incompatible with that of previous function "rsqrt"
+> ```
+>
+> This breaks **causal-conv1d, mamba-ssm, AND ToothGroupNetwork's pointops**.
+>
+> **Root cause:** glibc 2.43's `bits/mathcalls.h` declares `rsqrt`/`rsqrtf` with `noexcept(true)`, but CUDA 13.0's `crt/math_functions.h` declares them without `noexcept`. The two declarations conflict in C++. Switching GCC versions or `-ccbin` does NOT fix this — both compilers read the same conflicting headers. The fix is to patch the CUDA header itself (2 lines).
+
 ```bash
-MAX_JOBS=1 nice -n 19 pip install git+https://github.com/state-spaces/mamba.git --no-cache-dir --no-build-isolation
+# One-time, machine-wide patch. Backup first so you can revert.
+sudo cp /usr/local/cuda-13.0/include/crt/math_functions.h \
+        /usr/local/cuda-13.0/include/crt/math_functions.h.bak
+sudo sed -i 's/rsqrt(double x);/rsqrt(double x) noexcept(true);/' \
+    /usr/local/cuda-13.0/include/crt/math_functions.h
+sudo sed -i 's/rsqrtf(float x);/rsqrtf(float x) noexcept(true);/' \
+    /usr/local/cuda-13.0/include/crt/math_functions.h
+
+# Verify — both lines should now end with ` noexcept(true);`
+grep -n "rsqrt[f]*(double x\|rsqrt[f]*(float x" /usr/local/cuda-13.0/include/crt/math_functions.h
 ```
 
-This will also upgrade torch to 2.11.0 and install triton, tilelang, quack-kernels.
-**Let it complete fully — takes 30-60 min.**
+This patch survives until you upgrade `cuda-nvcc-13-0` via apt (it'll overwrite the header — re-apply the sed if so).
+A future CUDA 13.0.1+ / 13.1+ release should fix this upstream.
+
+Then for each CUDA build, the standard env is enough — no GCC switch required:
+
+```bash
+source /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/venv/bin/activate
+export PATH=/usr/local/cuda-13.0/bin:$PATH
+```
+
+### Step 4b — causal-conv1d (~5 min)
+
+```bash
+MAX_JOBS=1 nice -n 19 pip install --no-cache-dir --no-build-isolation causal-conv1d
+python -c "import causal_conv1d; print('causal_conv1d OK')"
+```
+
+### Step 4c — mamba-ssm from git (30–60 min, RAM/CPU heavy)
+
+```bash
+MAX_JOBS=1 nice -n 19 pip install --no-cache-dir --no-build-isolation git+https://github.com/state-spaces/mamba.git
+python -c "from mamba_ssm import Mamba; print('mamba-ssm OK')"
+```
+
+Builds against torch 2.12+cu130 (or whatever was installed in Step 3).
+**Let it complete fully.** If your desktop freezes, drop to TTY (`Ctrl+Alt+F3`) and watch with `htop` — do not reboot.
 
 ---
 
@@ -183,15 +228,13 @@ TIPs/
 ## Step 8 — Start the Server
 
 ```bash
-source /home/oaiz/envs/server_env_3.11/bin/activate
-export nnUNet_raw=/path/to/TIPs/nnUNet_raw
-export nnUNet_preprocessed=/path/to/TIPs/nnUNet_preprocessed
-export nnUNet_results=/path/to/TIPs/nnResults
-cd /path/to/TIPs
+cd /home/oaiz/Documents/Sanora/dianexea_stack/TIPs
+source ./venv/bin/activate
+# nnUNet env vars are set automatically by api_server_linux.py from REPO_ROOT
 python api_server_linux.py
 
+# Production launch (jemalloc + port override) — same command that start_server.sh / tips-server.service use:
 LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2 PYTHONMALLOC=malloc python api_server_linux.py --port 7863
-
 ```
 
 Expected startup output (all 4 models load in ~2-3 seconds):
@@ -224,6 +267,17 @@ Server runs at: **http://0.0.0.0:7862**
 ```bash
 export PATH=/usr/local/cuda-13.0/bin:$PATH
 ```
+
+### `error: exception specification is incompatible with that of previous function "rsqrt"` (CUDA 13 + glibc 2.43)
+Cost the maintainer **2 days** to figure out the first time. See Step 4a above for the full fix.
+Short version — patch CUDA's `crt/math_functions.h` to add `noexcept(true)` to the `rsqrt`/`rsqrtf` declarations:
+```bash
+sudo cp /usr/local/cuda-13.0/include/crt/math_functions.h /usr/local/cuda-13.0/include/crt/math_functions.h.bak
+sudo sed -i 's/rsqrt(double x);/rsqrt(double x) noexcept(true);/' /usr/local/cuda-13.0/include/crt/math_functions.h
+sudo sed -i 's/rsqrtf(float x);/rsqrtf(float x) noexcept(true);/' /usr/local/cuda-13.0/include/crt/math_functions.h
+# Re-apply if you ever apt upgrade cuda-nvcc-13-0 (it will overwrite the header).
+```
+**Note:** Switching GCC versions or setting `-ccbin` does NOT fix this — both compilers read the same conflicting glibc header. Only patching CUDA's header works.
 
 ### `mamba-ssm ABI mismatch / undefined symbol`
 Means a pre-built wheel was used. Reinstall from source:

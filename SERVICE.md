@@ -3,11 +3,23 @@
 ## Install
 
 ```bash
-sudo cp tips-server.service /etc/systemd/system/
+sudo cp /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/tips-server.service /etc/systemd/system/tips-server.service
 sudo systemctl daemon-reload
-sudo systemctl enable tips-server
-sudo systemctl start tips-server
+sudo systemctl enable --now tips-server.service
 ```
+
+- `enable` → starts automatically on every reboot / PC start
+- `--now`  → also starts it right now (no reboot needed to test)
+
+Verify it came up:
+
+```bash
+systemctl status tips-server
+journalctl -u tips-server -f
+```
+
+Watch the log until `[server] YOLO warmup done` then `[server] Worker ready`
+(~40s after start). The ngrok static URL is live as soon as the process is up.
 
 ## Commands
 
@@ -34,7 +46,7 @@ The systemd service file (`tips-server.service`) should be located at:
 ## What the service does
 
 The `tips-server` service runs:
-1. A Python API server on port 7863 (using the virtual environment at `/home/oaiz/envs/server_env_3.11`)
+1. A Python API server on port 7863 (using the virtual environment at `/home/oaiz/Documents/Sanora/dianexea_stack/TIPs/venv`)
 2. ngrok tunnel to expose the local server publicly
 
 Environment variables:
@@ -43,7 +55,7 @@ Environment variables:
 
 ## Prerequisites
 
-- Python 3.11 with virtual environment at `/home/oaiz/envs/server_env_3.11`
+- Python 3.11 with virtual environment at `/home/oaiz/Documents/Sanora/dianexea_stack/TIPs/venv`
 - ngrok installed
 - jemalloc library (`libjemalloc.so.2`)
 
@@ -64,7 +76,15 @@ journalctl -u tips-server -f
 ```
 
 ### Service shows "workers not ready"
-The server is still initializing (loading models). Wait for initialization to complete.
+The server is still initializing. Startup takes ~40s: ~3s model load + ~35s YOLO
+warmup. The warmup pays a one-time Blackwell-GPU cuDNN kernel-build cost up front
+so the first OPG job doesn't eat ~35s — expected, once per boot. Wait for
+`[server] Worker ready` in the logs.
+
+### ngrok "command not found" in the journal
+systemd uses a minimal PATH. Pin the full path in `start_server.sh`: change
+`ngrok http 7863` to `/usr/local/bin/ngrok http 7863`. (The venv `python` already
+uses an absolute path, so only ngrok is affected.)
 
 ## Run manually
 

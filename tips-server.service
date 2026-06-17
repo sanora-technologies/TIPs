@@ -5,8 +5,12 @@ After=network.target
 [Service]
 Type=simple
 User=oaiz
-WorkingDirectory=/home/oaiz/Documents/sanora/Dianexea_stack/TIPs/
-ExecStart=/home/oaiz/Documents/sanora/Dianexea_stack/TIPs/start_server.sh
+WorkingDirectory=/home/oaiz/Documents/Sanora/dianexea_stack/TIPs/
+# Force unbuffered stdout/stderr so every print() reaches journald live
+# (under systemd stdout is a pipe, so Python block-buffers it by default and
+#  logs only appear when the buffer fills — unlike a TTY which line-buffers).
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/oaiz/Documents/Sanora/dianexea_stack/TIPs/start_server.sh
 Restart=on-failure
 RestartSec=5
 # Early reclaim pressure (gives jemalloc a chance to return pages)

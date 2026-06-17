@@ -119,14 +119,14 @@ Quick reference to the actual tricks in [cascade_server.py](cascade_server.py):
 ## Running it
 
 ```bash
-# Same venv you used for training (must have nnunetv2 + mcubes + dicom2nifti + fastapi)
-source /home/oaiz/Documents/sanora/cbct_training/venv/bin/activate
+# Use the main TIPs venv (must have nnunetv2 + mcubes + dicom2nifti + fastapi)
+source /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/venv/bin/activate
 
 # Make sure CUDA is visible
 nvidia-smi
 
 # Start
-python /home/oaiz/Documents/sanora/Dianexea_stack/TIPs/cascade_server.py --port 7866
+python /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/cascade_server.py --port 7866
 
 # Open http://localhost:7866 → drop zip → wait ~8–12 min → STL viewer
 ```

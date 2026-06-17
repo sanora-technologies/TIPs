@@ -24,17 +24,22 @@ nvidia-smi | grep "CUDA Version"
 
 ## 2 — Clone and install
 
-```bash
-cd /home/oaiz/Documents/sanora/Dianexea_stack/TIPs
-git clone https://github.com/limhoyeon/ToothGroupNetwork.git
-cd ToothGroupNetwork
+The ToothGroupNetwork repo is already present at `./ToothGroupNetwork/`. The dedicated
+`venv_tgn` is **not** committed and must be recreated from scratch on each machine
+(it has CUDA-built native extensions, see [build_pointops.sh](build_pointops.sh)).
 
-# Dedicated venv (isolated from the main server)
-python3 -m venv venv_tgn
+```bash
+cd /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/ToothGroupNetwork
+
+# (Re-)create dedicated venv — must be isolated from the main TIPs venv
+# because torch-geometric / torch 2.6 / cu128 conflict with torch 2.11 / cu130 / mamba-ssm.
+rm -rf venv_tgn   # only if a stale/broken one exists
+python3.11 -m venv venv_tgn
 source venv_tgn/bin/activate
 
 # PyTorch — RTX 5060 Ti (Blackwell, CUDA 12.8)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# Pin to 2.7.0 — that's the lowest cu128 wheel available, and PyG hosts cu128 extensions for it.
+pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu128
 
 # If your GPU is older (CUDA 12.1):
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
@@ -43,7 +48,7 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 # Reference: https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html
 pip install torch-geometric
 pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
-    -f https://data.pyg.org/whl/torch-2.6.0+cu128.html
+    -f https://data.pyg.org/whl/torch-2.7.0+cu128.html
 
 # Other deps
 pip install open3d trimesh numpy scikit-learn fastapi uvicorn python-multipart
@@ -115,7 +120,7 @@ TIPs/tooth_segmentation_server.py
 It runs on port **7863** (the main inference server runs on 7862).
 
 ```bash
-cd /home/oaiz/Documents/sanora/Dianexea_stack/TIPs
+cd /home/oaiz/Documents/Sanora/dianexea_stack/TIPs
 
 python tooth_segmentation_server.py \
   --tgn_repo ./ToothGroupNetwork \
