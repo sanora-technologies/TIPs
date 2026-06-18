@@ -297,6 +297,10 @@ _http_client = httpx.Client(
     limits=httpx.Limits(max_keepalive_connections=10, keepalive_expiry=120.0),
 )
 
+# Object storage drops idle connections sooner than keepalive_expiry, yielding truncated
+# bodies on the next reuse. Retry transient download failures with exponential backoff.
+_FETCH_RETRIES = int(os.environ.get('MEDIA_FETCH_RETRIES', '4'))
+
 def _verify_token(creds: HTTPAuthorizationCredentials = Depends(_bearer)):
     if creds.credentials != _OPG_API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing token")
@@ -615,7 +619,10 @@ def _upload_report_zip(zip_bytes: bytes, filename: str, ai_report_id: Optional[i
                 put_resp = httpx.put(
                     s3_put_url,
                     content=zip_bytes,
-                    headers={"Content-Type": "application/zip"},
+                    # x-amz-acl must match the ACL the backend signed into the presigned
+                    # URL, or Linode rejects with SignatureDoesNotMatch. Makes the report
+                    # publicly viewable (Linode E2/E3 has no bucket policy).
+                    headers={"Content-Type": "application/zip", "x-amz-acl": "public-read"},
                     timeout=300,  # 5 min for large ZIPs
                 )
                 put_resp.raise_for_status()
@@ -2044,6 +2051,14 @@ _job_queue: "queue.Queue[str]" = queue.Queue()
 _jobs: Dict[str, Dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 
+# GPU scheduling. The CBCT 3-D pipeline (nnUNet UMamba) and the TGN point-cloud subprocess
+# each load multi-GB models; running two heavy jobs on one card risks a CUDA OOM that kills a
+# job mid-run. They share this semaphore so only HEAVY_GPU_CONCURRENCY of them touch the GPU
+# at once (default 1 = strictly serialized). Downloads happen OUTSIDE the semaphore, so a fast
+# OPG/ceph job — which uses small resident models and is never gated — never waits, and a TGN
+# scan's network fetch overlaps with a running CBCT instead of blocking on it.
+_HEAVY_GPU_SEM = threading.BoundedSemaphore(int(os.environ.get('HEAVY_GPU_CONCURRENCY', '1')))
+
 _UPLOADS = REPO_ROOT / "uploads"
 _UPLOADS.mkdir(exist_ok=True)
 
@@ -2443,9 +2458,29 @@ def _fetch_bytes_sync(url: str) -> bytes:
             return local_path.read_bytes()
         else:
             raise RuntimeError("Cannot resolve relative URL: set BACKEND_BASE_URL or BACKEND_ASSETS_PATH")
-    resp = _http_client.get(url)
-    resp.raise_for_status()
-    return resp.content
+    # Linode/S3 object storage occasionally closes a (stale keep-alive) socket mid-body,
+    # raising RemoteProtocolError "peer closed connection ... expected N bytes". These are
+    # transient — a retry grabs a fresh connection. Validate the body length against
+    # Content-Length so a silent truncation is caught rather than fed to inference.
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, _FETCH_RETRIES + 1):
+        try:
+            with _http_client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                expected = resp.headers.get("Content-Length")
+                data = resp.read()
+            if expected is not None and len(data) != int(expected):
+                raise httpx.RemoteProtocolError(
+                    f"truncated body: received {len(data)} bytes, expected {expected}")
+            return data
+        except (httpx.TransportError, httpx.RemoteProtocolError) as e:
+            last_exc = e
+            if attempt < _FETCH_RETRIES:
+                backoff = min(2 ** (attempt - 1), 10)
+                print(f"[fetch] attempt {attempt}/{_FETCH_RETRIES} failed for {url} "
+                      f"({e}); retrying in {backoff}s", flush=True)
+                time.sleep(backoff)
+    raise RuntimeError(f"failed to fetch {url} after {_FETCH_RETRIES} attempts: {last_exc}") from last_exc
 
 
 def _tgn_python() -> str:
@@ -2743,10 +2778,25 @@ def _run_tgn_inference(file_bytes: bytes, filename: str, arch: str) -> dict:
             "--checkpoint_path",     "ckpts/tgnet_fps",
             "--checkpoint_path_bdl", "ckpts/tgnet_bdl",
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=str(TGN_REPO_PATH))
-        if result.returncode != 0:
-            print(f"[tooth-seg] stderr:\n{result.stderr[-1500:]}")
-            raise RuntimeError(f"TGN inference failed: {result.stderr[-400:]}")
+        # Stream the TGN subprocess output line-by-line so it shows up live in the
+        # journal (capture_output=True would swallow it and only surface it on error).
+        # We still keep the last N lines of stderr for the failure message.
+        env["PYTHONUNBUFFERED"] = "1"
+        print(f"[tooth-seg] launching TGN inference: {' '.join(cmd)}", flush=True)
+        proc = subprocess.Popen(
+            cmd, env=env, cwd=str(TGN_REPO_PATH), text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
+        )
+        tail = []
+        for line in proc.stdout:
+            line = line.rstrip()
+            print(f"[tgn] {line}", flush=True)
+            tail.append(line)
+            if len(tail) > 50:
+                tail.pop(0)
+        returncode = proc.wait()
+        if returncode != 0:
+            raise RuntimeError("TGN inference failed:\n" + "\n".join(tail[-20:]))
 
         # Locate output JSON
         out_json = output_dir / f"{full_name}.json"
@@ -2828,7 +2878,13 @@ def _process_tooth_seg_job(job_id: str) -> None:
         print(f"[tooth-seg] job {job_id[:8]} fetching {media_url} (arch={arch})")
 
         file_bytes = _fetch_bytes_sync(media_url)
-        result = _run_tgn_inference(file_bytes, filename, arch)
+        # Heavy GPU work — serialize against CBCT (and other TGN scans) to avoid CUDA OOM.
+        with _jobs_lock:
+            _jobs[job_id]['stage'] = 'waiting for GPU'
+        with _HEAVY_GPU_SEM:
+            with _jobs_lock:
+                _jobs[job_id]['stage'] = 'running'
+            result = _run_tgn_inference(file_bytes, filename, arch)
         result["arch"] = arch
         elapsed_ms = round((time.time() - t0) * 1000)
 
@@ -2917,19 +2973,50 @@ def _process_job(job_id: str) -> None:
                 media_url = BACKEND_BASE_URL + '/' + media_url.lstrip('/')
             _set_stage('Downloading scan…')
             print(f'[server] Downloading {media_url} → {zip_path.name}')
-            with httpx.stream('GET', media_url, timeout=300,
-                              headers={'User-Agent': 'Mozilla/5.0'},
-                              follow_redirects=True) as _dl:
-                _dl.raise_for_status()
-                with open(str(zip_path), 'wb') as _f:
-                    for _chunk in _dl.iter_bytes(chunk_size=1024 * 1024):
-                        _f.write(_chunk)
+            _last_exc: Optional[Exception] = None
+            for _attempt in range(1, _FETCH_RETRIES + 1):
+                try:
+                    with httpx.stream('GET', media_url, timeout=300,
+                                      headers={'User-Agent': 'Mozilla/5.0'},
+                                      follow_redirects=True) as _dl:
+                        _dl.raise_for_status()
+                        _expected = _dl.headers.get('Content-Length')
+                        with open(str(zip_path), 'wb') as _f:
+                            for _chunk in _dl.iter_bytes(chunk_size=1024 * 1024):
+                                _f.write(_chunk)
+                    _got = zip_path.stat().st_size
+                    if _expected is not None and _got != int(_expected):
+                        raise httpx.RemoteProtocolError(
+                            f"truncated body: received {_got} bytes, expected {_expected}")
+                    _last_exc = None
+                    break
+                except (httpx.TransportError, httpx.RemoteProtocolError) as _e:
+                    _last_exc = _e
+                    zip_path.unlink(missing_ok=True)   # drop the partial file before retrying
+                    if _attempt < _FETCH_RETRIES:
+                        _backoff = min(2 ** (_attempt - 1), 10)
+                        print(f'[server]   download attempt {_attempt}/{_FETCH_RETRIES} failed '
+                              f'({_e}); retrying in {_backoff}s', flush=True)
+                        time.sleep(_backoff)
+            if _last_exc is not None:
+                raise RuntimeError(
+                    f"download failed after {_FETCH_RETRIES} attempts: {_last_exc}") from _last_exc
         print(f'[server]   scan ready ({zip_path.stat().st_size / 1e6:.1f} MB)')
     except Exception as exc:
+        # Previously this branch was silent (no log, no webhook), so a failed CBCT download
+        # left the backend waiting forever — "sent but never diagnosed". Mirror the main
+        # error handler: log it and notify the backend so the report is marked failed.
+        print(f'[server] ERROR job {job_id[:8]}: Download failed: {exc}', flush=True)
         with _jobs_lock:
             _jobs[job_id]['status']  = 'error'
             _jobs[job_id]['stage']   = 'error'
             _jobs[job_id]['error']   = f'Download failed: {exc}'
+        _send_webhook({
+            "ai_report_id":  job.get('ai_report_id'),
+            "report_type":   "file",
+            "status":        "failed",
+            "error_message": f'Download failed: {exc}',
+        })
         return
 
     with _jobs_lock:
@@ -2942,6 +3029,10 @@ def _process_job(job_id: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     workspace = REPO_ROOT / "workspace"
 
+    # Heavy GPU work — serialize against TGN (and any other CBCT) to avoid CUDA OOM. The scan
+    # is already downloaded; only the GPU pipeline is gated, so fast jobs are unaffected.
+    _set_stage('Waiting for GPU…')
+    _HEAVY_GPU_SEM.acquire()
     try:
         t0 = time.time()
         print(f'\n[server] ── Job {job_id[:8]} | {case_name} ──────────────────')
@@ -3045,6 +3136,8 @@ def _process_job(job_id: str) -> None:
             "status":        "failed",
             "error_message": str(e),
         })
+    finally:
+        _HEAVY_GPU_SEM.release()
 
 
 def _delete_result(job_id: str, out_dir: Path) -> None:

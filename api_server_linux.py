@@ -1959,6 +1959,107 @@ def _load_cbct(base: str):
     _cbct_cache[base] = entry
     return entry
 
+# ── CBCT 2D viewer assets ───────────────────────────────────────────────────────
+
+def _build_cbct_viewer_assets(case_name: str, payload: dict):
+    """
+    Pre-bake the windowed uint8 CBCT volume + per-mesh voxel localization so the
+    web viewer can render the 2D MPR planes AND link the 3D model to the 2D
+    planes (click a tooth → jump/crosshair on each plane) directly from the
+    report ZIP — no separate DICOM download or server-side parsing required.
+
+    Returns (volume_bytes, geometry_dict) or (None, None) when cbct.nii.gz is
+    unavailable (so the caller can simply skip the assets — old viewers fall
+    back to the on-demand /api/cbct_volume route).
+
+    Contract (mirrors /api/cbct_volume orientation exactly):
+      • volume.bin  — flat C-order uint8 [d0, d1, d2] (windowed with vmin/vmax)
+      • geometry.json:
+          shape, axis_order {sagittal,coronal,axial -> data axis},
+          z_sign, y_sign  (used by the client for in-plane flips),
+          vmin, vmax, spacing, downsample,
+          meshes: [{layer, label, centroid_vox, bbox_vox,
+                    slice:{axial,coronal,sagittal}}]   (in the *downsampled* grid)
+    """
+    try:
+        entry = _load_cbct(case_name)
+    except Exception as e:
+        print(f'[server]   viewer-assets: _load_cbct failed: {e}')
+        return None, None
+    if entry is None:
+        return None, None
+
+    data, affine, vmin, vmax, axis_order = entry
+
+    try:
+        ds = max(1, int(os.environ.get("CBCT_VIEWER_DS", "1")))
+    except Exception:
+        ds = 1
+
+    # windowed uint8 volume — identical normalization to /api/cbct_volume
+    u8 = np.clip((data.astype(np.float32) - vmin) / max(vmax - vmin, 1.0), 0.0, 1.0)
+    u8 = (u8 * 255.0).astype(np.uint8)
+    if ds > 1:
+        u8 = u8[::ds, ::ds, ::ds]
+    shape = [int(s) for s in u8.shape]
+    volume_bytes = np.ascontiguousarray(u8).tobytes()
+
+    z_sign = float(affine[2, axis_order["axial"]])
+    y_sign = float(affine[1, axis_order["coronal"]])
+    inv_aff = np.linalg.inv(affine)
+
+    def _world_to_vox(pts):                       # (N,3) world mm -> (N,3) voxel idx (full-res)
+        homo = np.hstack([pts, np.ones((len(pts), 1), dtype=np.float64)])
+        return (inv_aff @ homo.T).T[:, :3]
+
+    def _clamp(v, ax):
+        return int(max(0, min(shape[ax] - 1, round(float(v)))))
+
+    meshes_out = []
+    for layer_key in ("toothseg", "pulp", "structures"):
+        for m in payload.get(layer_key, {}).get("meshes", []):
+            verts = m.get("vertices") or []
+            if not verts:
+                continue
+            arr = np.asarray(verts, dtype=np.float64).reshape(-1, 3)
+            vox = _world_to_vox(arr)
+            cen = vox.mean(axis=0)
+            mn  = vox.min(axis=0)
+            mx  = vox.max(axis=0)
+            if ds > 1:
+                cen = cen / ds; mn = mn / ds; mx = mx / ds
+            meshes_out.append({
+                "layer": layer_key,
+                "label": int(m.get("label", 0)),
+                "centroid_vox": [round(float(c), 2) for c in cen],
+                "bbox_vox": [[round(float(x), 2) for x in mn],
+                             [round(float(x), 2) for x in mx]],
+                "slice": {
+                    "axial":    _clamp(cen[axis_order["axial"]],    axis_order["axial"]),
+                    "coronal":  _clamp(cen[axis_order["coronal"]],  axis_order["coronal"]),
+                    "sagittal": _clamp(cen[axis_order["sagittal"]], axis_order["sagittal"]),
+                },
+            })
+
+    # world(mm) -> voxel(full-res) matrix; for ds>1 divide the spatial rows by ds
+    w2v = inv_aff.copy()
+    if ds > 1:
+        w2v[:3, :] = w2v[:3, :] / ds
+    geometry = {
+        "shape": shape,
+        "axis_order": axis_order,
+        "z_sign": z_sign,
+        "y_sign": y_sign,
+        "vmin": float(vmin),
+        "vmax": float(vmax),
+        "downsample": ds,
+        "spacing": [float(abs(affine[i, i])) * ds for i in range(3)],
+        "world_to_vox": [[float(x) for x in row] for row in w2v],
+        "meshes": meshes_out,
+    }
+    return volume_bytes, geometry
+
+
 # ── result caching (NEW) ───────────────────────────────────────────────────────
 
 def _build_result_cache(case_name: str, out_dir: Path) -> Path:
@@ -2039,6 +2140,20 @@ def _build_result_cache(case_name: str, out_dir: Path) -> Path:
                     continue
                 stl_bytes = _mesh_to_stl_bytes(verts, faces)
                 zf.writestr(f"stls/{layer_key}_{lbl}.stl", stl_bytes)
+
+        # ── CBCT 2D viewer assets: windowed volume + 3D↔2D localization ──────
+        # Bundling these lets the web viewer render the MPR planes and link the
+        # 3D model to them straight from this ZIP (no separate DICOM download).
+        try:
+            vol_bytes, geometry = _build_cbct_viewer_assets(case_name, payload)
+            if vol_bytes is not None:
+                zf.writestr("volume.bin", vol_bytes)
+                zf.writestr("geometry.json", json.dumps(geometry, separators=(',', ':')))
+                print(f'[server]   viewer-assets: volume {len(vol_bytes)/1e6:.1f} MB '
+                      f'(shape={geometry["shape"]}, ds={geometry["downsample"]}) '
+                      f'+ geometry ({len(geometry["meshes"])} meshes)')
+        except Exception as e:
+            print(f'[server]   viewer-assets FAILED (non-critical): {e}')
 
     print(f'[server] Result cache written in {time.time()-t0:.1f}s '
           f'(json={json_path.stat().st_size/1024/1024:.1f} MB, '
@@ -3357,6 +3472,13 @@ def result_by_base(base: str):
                     if mesh.get("vertices") and mesh.get("faces"):
                         zf.writestr(f"stls/{layer_key}_{lbl}.stl",
                                     _mesh_to_stl_bytes(mesh["vertices"], mesh["faces"]))
+            try:
+                vol_bytes, geometry = _build_cbct_viewer_assets(base, payload)
+                if vol_bytes is not None:
+                    zf.writestr("volume.bin", vol_bytes)
+                    zf.writestr("geometry.json", json.dumps(geometry, separators=(',', ':')))
+            except Exception as e:
+                print(f'[result_by_base]   viewer-assets FAILED (non-critical): {e}')
         cache_path.write_bytes(buf.getvalue())
     return Response(
         content=cache_path.read_bytes(),
