@@ -191,10 +191,15 @@ def _apply_gpu_resampling_patch() -> None:
                               data_np.astype(np.float32)).unsqueeze(0).cuda()
                     r   = F.interpolate(t, size=new_shape, mode=mode, **extra)
                     out = r.squeeze(0).cpu().numpy()
-                    del t, r; torch.cuda.empty_cache()
+                    # NO empty_cache() here — this runs once per resample. Evicting the
+                    # caching allocator forces the next alloc back through cudaMalloc,
+                    # which synchronizes the device. With 16 GB VRAM vs ~600 MB of models
+                    # there is nothing to reclaim; the eviction was pure latency.
+                    del t, r
                 return (np.round(out).astype(data_np.dtype)
                         if is_seg else out)
             except RuntimeError:
+                # Genuine CUDA OOM — here the eviction IS worth it before falling back.
                 torch.cuda.empty_cache()
                 return _orig(data, new_shape, current_spacing, new_spacing,
                              is_seg, order, order_z, force_separate_z)
@@ -878,6 +883,19 @@ def _build_predictor(model_folder: str, folds: tuple, checkpoint: str,
 _DEVICE = torch.device('cuda')
 _USE_AMP = True   # FP16 autocast — 2× faster on RTX 50-series tensor cores
 
+# torch CPU intra-op threads. KEEP AT 1.
+#
+# Measured 2026-07-12 on a real CBCT case: raising this to 6 (physical core count)
+# made the pipeline SLOWER by 34s (187s -> 221s), with every second of the regression
+# landing in GPU inference (semseg 18->28s, instseg 37->44s, pulp +10s, dental +6s)
+# while every CPU stage stayed flat.
+#
+# Reason: nnUNet sliding-window inference runs with perform_everything_on_device=True,
+# so the GPU does the work and the CPU is just a latency-sensitive feeder loop. Multiple
+# intra-op threads add pool dispatch + sync overhead to many small CPU ops in that loop
+# — pure contention, no parallelism to win. Single-threaded is correct here.
+_CPU_THREADS = int(os.environ.get('TIPS_CPU_THREADS', '1'))
+
 
 _libc = None
 def _malloc_trim() -> None:
@@ -898,12 +916,13 @@ def load_all_models(device_str: str = 'cuda') -> None:
 
     RTX 5060 Ti has 16 GB VRAM; the 4 model checkpoints total ~300–600 MB,
     leaving ~15 GB free for inference sliding-window buffers.  Keeping models
-    on GPU means zero CPU-RAM pressure from model weights — critical when the
-    host system only has 15 GB RAM with ~6 GB already used by OS + desktop."""
+    on GPU means zero CPU-RAM pressure from model weights — still the right
+    call: weights never compete with the CPU-side volume buffers."""
     global _DEVICE
     _DEVICE = torch.device(device_str)
     device  = _DEVICE
-    torch.set_num_threads(1)
+    # Both pinned to 1 — see _CPU_THREADS. Raising them regressed GPU inference by 34s.
+    torch.set_num_threads(_CPU_THREADS)
     torch.set_num_interop_threads(1)
     os.environ['nnUNet_results'] = str(REPO_ROOT / 'nnResults')
     _apply_gpu_resampling_patch()
@@ -998,10 +1017,11 @@ def _resize_to_02(images_dir: Path, workspace: Path) -> Path:
                 torch.from_numpy(arr)[None], shape,
                 is_seg=False, device=torch.device('cuda:0'))[0].numpy()
         except Exception:
+            # CUDA path failed (likely VRAM) — reclaim before the CPU fallback.
+            torch.cuda.empty_cache()
             arr_r = resample_torch_simple(
                 torch.from_numpy(arr)[None], shape,
                 is_seg=False, device=torch.device('cpu'))[0].numpy()
-        torch.cuda.empty_cache()
         out_im = sitk.GetImageFromArray(arr_r)
         out_im.SetSpacing(tuple(target_spacing[::-1]))
         out_im.SetOrigin(im.GetOrigin())
@@ -1192,7 +1212,7 @@ def _stage1_toothseg(zip_path: Path, workspace: Path) -> tuple[Path, str]:
     _t6 = time.time()
     resample_segmentations_to_ref(
         str(images_dir), str(inst_dir), str(inst_resized_dir),
-        num_threads_cpu_resampling=1)
+        num_threads_cpu_resampling=_CPU_THREADS)
     shutil.rmtree(str(inst_dir), ignore_errors=True)  # free raw instances
     torch.cuda.empty_cache(); gc.collect(); _malloc_trim()
     print(f'[stage1]  resize_predictions: {time.time()-_t6:.1f}s')
@@ -1262,10 +1282,12 @@ def _stage2_pulp(toothseg_path: Path,
             pass
         print('[pulp]  SDM done, intermediates freed, loading model ...', flush=True)
 
-        # Final flush before inference (models should already be on GPU from startup)
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+        # Release the CPU-side SDM/teeth arrays before inference. The double
+        # cuda.synchronize() + empty_cache() that used to sit here was a VRAM
+        # defence for the 15 GB host; it stalled the CPU on a full device drain
+        # and evicted the caching allocator for no benefit (models are already
+        # resident, ~600 MB of 16 GB VRAM). CPU RAM is what mattered — that is
+        # what gc + malloc_trim actually reclaim.
         gc.collect()
         _malloc_trim()
 
