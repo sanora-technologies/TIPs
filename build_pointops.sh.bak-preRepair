@@ -1,10 +1,10 @@
 #!/bin/bash
 # Single-shot build script for ToothGroupNetwork's pointops CUDA extension.
-# Run with: bash /home/oaiz/Documents/sanora/TIPs/build_pointops.sh
+# Run with: bash /home/oaiz/Documents/Sanora/dianexea_stack/TIPs/build_pointops.sh
 
 set -e
 
-TGN_DIR="/home/oaiz/Documents/sanora/TIPs/ToothGroupNetwork"
+TGN_DIR="/home/oaiz/Documents/Sanora/dianexea_stack/TIPs/ToothGroupNetwork"
 VENV_DIR="$TGN_DIR/venv_tgn"
 POINTOPS_DIR="$TGN_DIR/external_libs/pointops"
 LOG_FILE="/tmp/pointops_build.log"
